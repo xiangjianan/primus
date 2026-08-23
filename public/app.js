@@ -1,33 +1,27 @@
 /* ============================================================
    第一性原理引擎 · 前端逻辑
-   - 输入（目标 / 随心所想）→ 第一性原理
-   - 逐层递进推导（A → B → C → …）
-   - 记录、树形可视化、整体总结、Markdown 导出、localStorage 持久化
+   Codex Agent 式：左侧工作空间栏（当前会话 / 历史 / 图谱）
+   + 右侧主推导区（目标卡片 + 垂直下钻链 + 操作条 + 总结）
    ============================================================ */
 (function () {
   'use strict';
 
-  const STORAGE_KEY = 'fp-engine-state-v1';
+  const STORAGE_KEY = 'fp-engine-state-v2';
   const MODE_META = {
     goal: {
-      icon: '🎯',
-      label: '目标拆解',
+      icon: '🎯', label: '目标拆解',
       hint: '输入一个目的（如“减肥”“创业”“学英语”），我会拆出达成它必须先达成的前置目的。',
-      placeholder: '例如：三个月内把体重从 80kg 降到 70kg，同时保持精力充沛……',
+      placeholder: '例如：我想在三个月内把体重从 80kg 降到 70kg，同时保持精力充沛……',
       statuses: ['正在拆解目标…', '正在找最关键的前提…', '正在想“先要达成什么”…', '正在凝练前置目的…'],
     },
     text: {
-      icon: '📝',
-      label: '随心所想',
+      icon: '📝', label: '随心所想',
       hint: '粘贴一段散乱的长文本（思绪、随笔、碎碎念都可以），我会先用大白话提炼你真正想要的，再给出达成它的前置目的。',
       placeholder: '把脑子里的想法一股脑倒进来吧，越散乱越好……',
       statuses: ['正在通读原文…', '正在判断你真正想要什么…', '正在找最关键的前提…', '正在凝练前置目的…'],
     },
     derive: {
-      icon: '🔁',
-      label: '递进推导',
-      hint: '',
-      placeholder: '',
+      icon: '🔁', label: '递进推导',
       statuses: ['正在往前追问…', '正在想“要先达成什么”…', '正在剥离可有可无的步骤…', '正在凝练更前置的目的…'],
     },
   };
@@ -36,17 +30,18 @@
   const colorOf = (d) => DEPTH_COLORS[Math.min(Math.max(d || 0, 0), DEPTH_COLORS.length - 1)];
 
   const state = {
-    nodes: [],      // {id,parentId,rootId,depth,mode,sourceText,label,principle,essence,reasoning,keywords,thinking,createdAt}
-    summary: null,  // {summary,themes,actions}
-    pending: [],    // 进行中的请求占位 {id, kind:'root'|'child', mode, text, parentId, hint}
+    nodes: [],          // 所有节点（跨会话）
+    summaries: {},      // rootId -> {summary, themes, actions, thinking}
+    summaryLoading: false,
+    pending: [],        // 进行中的请求 {id, kind:'root'|'child', mode, text, parentId, hint}
     mode: 'goal',
-    expanded: new Set(), // 展开状态的会话 rootId
-    deriveDrafts: {},    // nodeId -> 未提交的补充文本（仅渲染间暂存，不持久化）
+    currentRootId: null,  // 当前会话 root
+    chainCollapsed: false, // 「收起本轮」
+    deriveDrafts: {},     // nodeId -> 未提交补充文本（渲染间暂存）
   };
 
   const $ = (s) => document.querySelector(s);
-  const chainEl = $('#chain');
-  const emptyEl = $('#emptyState');
+  const mainContent = $('#mainContent');
   const inputEl = $('#inputText');
   const charCountEl = $('#charCount');
   const btnSubmit = $('#btnSubmit');
@@ -62,6 +57,8 @@
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
+
+  function shortStr(s, n) { return s && s.length > n ? s.slice(0, n - 1) + '…' : s; }
 
   let toastTimer = null;
   function toast(msg, isErr) {
@@ -86,8 +83,8 @@
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
         nodes: state.nodes,
-        summary: state.summary,
-        expanded: [...state.expanded],
+        summaries: state.summaries,
+        currentRootId: state.currentRootId,
       }));
     } catch (_) { /* 忽略配额错误 */ }
   }
@@ -98,18 +95,68 @@
       if (!raw) return;
       const saved = JSON.parse(raw);
       if (Array.isArray(saved.nodes)) state.nodes = saved.nodes;
-      if (saved.summary) state.summary = saved.summary;
-      if (Array.isArray(saved.expanded)) state.expanded = new Set(saved.expanded);
+      if (saved.summaries && typeof saved.summaries === 'object') state.summaries = saved.summaries;
+      if (saved.currentRootId) state.currentRootId = saved.currentRootId;
     } catch (_) { /* 损坏时忽略 */ }
   }
 
   function fmtTime(ts) {
     const d = new Date(ts);
     const p = (n) => String(n).padStart(2, '0');
-    return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+    return `${p(d.getHours())}:${p(d.getMinutes())}`;
+  }
+
+  function relTime(ts) {
+    const diff = Date.now() - ts;
+    const m = Math.floor(diff / 60000);
+    if (m < 1) return '刚刚';
+    if (m < 60) return `${m} 分钟前`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h} 小时前`;
+    const d = Math.floor(h / 24);
+    if (d === 1) return '昨天';
+    if (d < 30) return `${d} 天前`;
+    return new Date(ts).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });
   }
 
   /* ---------------- 状态派生 ---------------- */
+  function buildChildrenMap() {
+    const childrenOf = new Map();
+    for (const n of state.nodes) {
+      if (n.parentId == null) continue;
+      if (!childrenOf.has(n.parentId)) childrenOf.set(n.parentId, []);
+      childrenOf.get(n.parentId).push(n);
+    }
+    for (const arr of childrenOf.values()) arr.sort((a, b) => a.createdAt - b.createdAt);
+    return childrenOf;
+  }
+
+  /** 会话（root 节点）列表，最新的在前 */
+  function sessions() {
+    return state.nodes.filter((n) => n.parentId == null).sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  /** 某条链的节点（先序：root → 子 → 孙），线性链时即 A→B→C 顺序 */
+  function chainNodesOf(rootId) {
+    const childrenOf = buildChildrenMap();
+    const out = [];
+    const walk = (id) => {
+      const node = state.nodes.find((n) => n.id === id);
+      if (node) out.push(node);
+      for (const k of childrenOf.get(id) || []) walk(k.id);
+    };
+    walk(rootId);
+    return out;
+  }
+
+  function chainStats(rootId) {
+    const nodes = chainNodesOf(rootId);
+    return {
+      count: nodes.length,
+      maxDepth: nodes.reduce((m, n) => Math.max(m, n.depth), 0),
+    };
+  }
+
   function ancestorsOf(node) {
     const list = [];
     let cur = state.nodes.find((n) => n.id === node.parentId);
@@ -118,6 +165,129 @@
       cur = state.nodes.find((n) => n.id === cur.parentId);
     }
     return list;
+  }
+
+  /** 会话摘要文本（essence 优先） */
+  function sessionEssence(root) {
+    return root.essence || root.label || shortStr(root.principle, 40) || '（未命名会话）';
+  }
+
+  /* ---------------- 侧栏 ---------------- */
+  const ws = $('#workspace');
+  const isMobile = () => window.innerWidth <= 900;
+
+  function openSidebar() {
+    if (isMobile()) { ws.classList.add('open'); document.body.classList.add('ws-open'); }
+    else ws.classList.remove('hidden');
+  }
+  function closeSidebar() {
+    if (isMobile()) { ws.classList.remove('open'); document.body.classList.remove('ws-open'); }
+    else ws.classList.add('hidden');
+  }
+  function toggleSidebar() {
+    if (isMobile()) {
+      const open = ws.classList.toggle('open');
+      document.body.classList.toggle('ws-open', open);
+    } else {
+      ws.classList.toggle('hidden');
+    }
+  }
+  $('#btnSidebar').addEventListener('click', toggleSidebar);
+  $('#wsBackdrop').addEventListener('click', closeSidebar);
+
+  function renderSidebar() {
+    renderCurrentSession();
+    renderHistory();
+  }
+
+  function renderCurrentSession() {
+    const box = $('#currentSession');
+    const root = state.nodes.find((n) => n.id === state.currentRootId);
+    if (!root) {
+      box.className = 'current-session empty';
+      box.innerHTML = '暂无当前会话<br/>点击上方「开始新推导」';
+      box.onclick = null;
+      return;
+    }
+    box.className = 'current-session';
+    const { count, maxDepth } = chainStats(root.id);
+    box.innerHTML = `
+      <div class="cs-essence">${escapeHtml(sessionEssence(root))}</div>
+      <div class="cs-meta">
+        <span class="cs-depth">${count} 层 · 最深 L${maxDepth}</span>
+        <span class="cs-time">${relTime(root.createdAt)}</span>
+      </div>`;
+    box.onclick = () => {
+      state.chainCollapsed = !state.chainCollapsed;
+      persist();
+      renderAll();
+    };
+    box.title = '点击展开/收起本轮';
+  }
+
+  function renderHistory() {
+    const list = $('#historyList');
+    const roots = sessions();
+    if (roots.length === 0) {
+      list.innerHTML = '<div class="history-empty">还没有历史记录</div>';
+      return;
+    }
+    list.innerHTML = '';
+    for (const root of roots) {
+      const { count, maxDepth } = chainStats(root.id);
+      const item = document.createElement('div');
+      item.className = 'history-item' + (root.id === state.currentRootId ? ' active' : '');
+      item.innerHTML = `
+        <div class="hi-essence">${escapeHtml(sessionEssence(root))}</div>
+        <div class="hi-meta">
+          <span class="hi-depth">L0–L${maxDepth} · ${count}</span>
+          <span class="hi-time">${relTime(root.createdAt)}</span>
+        </div>
+        <button class="hi-del" title="删除这条会话">✕</button>`;
+      item.addEventListener('click', (e) => {
+        if (e.target.closest('.hi-del')) return;
+        state.currentRootId = root.id;
+        state.chainCollapsed = false;
+        persist();
+        renderAll();
+        if (isMobile()) closeSidebar();
+      });
+      item.querySelector('.hi-del').addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (confirm(`确定删除这条会话（共 ${count} 个节点）吗？`)) deleteSession(root.id);
+      });
+      list.appendChild(item);
+    }
+  }
+
+  $('#btnNewDerive').addEventListener('click', () => {
+    state.currentRootId = null;
+    state.chainCollapsed = false;
+    state.summaryLoading = false;
+    persist();
+    renderAll();
+    inputEl.focus();
+    if (isMobile()) closeSidebar();
+  });
+
+  function deleteSession(rootId) {
+    const ids = new Set([rootId]);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const n of state.nodes) {
+        if (ids.has(n.parentId) && !ids.has(n.id)) { ids.add(n.id); changed = true; }
+      }
+    }
+    state.nodes = state.nodes.filter((n) => !ids.has(n.id));
+    delete state.summaries[rootId];
+    if (state.currentRootId === rootId) {
+      const rest = sessions();
+      state.currentRootId = rest.length ? rest[0].id : null;
+    }
+    persist();
+    renderAll();
+    toast('已删除会话');
   }
 
   /* ---------------- 输入区 ---------------- */
@@ -132,17 +302,10 @@
     });
   });
 
-  inputEl.addEventListener('input', () => {
-    charCountEl.textContent = inputEl.value.length;
-  });
-
+  inputEl.addEventListener('input', () => { charCountEl.textContent = inputEl.value.length; });
   inputEl.addEventListener('keydown', (e) => {
-    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-      e.preventDefault();
-      submitInput();
-    }
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); submitInput(); }
   });
-
   btnSubmit.addEventListener('click', submitInput);
 
   async function submitInput() {
@@ -153,37 +316,34 @@
     charCountEl.textContent = '0';
     btnSubmit.disabled = true;
 
-    const pending = { id: uid(), kind: 'root', mode: state.mode, text, parentId: null };
+    const pending = { id: uid(), kind: 'root', mode: state.mode, text, parentId: null, hint: '' };
     state.pending.push(pending);
+    state.currentRootId = pending.id; // 新会话成为当前会话
+    state.chainCollapsed = false;
     renderAll();
 
     try {
       const res = await apiPost('/api/derive', { text, mode: state.mode, context: null });
       const node = {
-        id: pending.id,
-        parentId: null,
-        rootId: pending.id,
-        depth: 0,
-        mode: state.mode,
-        sourceText: text,
-        label: res.data.label || '',
-        principle: res.data.principle || '',
-        essence: res.data.essence || '',
-        reasoning: res.data.reasoning || '',
+        id: pending.id, parentId: null, rootId: pending.id, depth: 0, mode: state.mode,
+        sourceText: text, label: res.data.label || '', principle: res.data.principle || '',
+        essence: res.data.essence || '', reasoning: res.data.reasoning || '',
         keywords: Array.isArray(res.data.keywords) ? res.data.keywords : [],
-        thinking: res.thinking || '',
+        thinking: res.thinking || '', guidance: '', isActionable: !!res.data.isActionable,
         createdAt: Date.now(),
       };
       state.nodes.push(node);
-      state.expanded.add(node.id); // 新会话默认展开
-      toast('✅ 已找到达成它的前置目的，可点击“继续往前推”深入');
+      state.currentRootId = node.id;
+      toast('✅ 已找到达成它的前置目的，可继续往前推');
     } catch (err) {
       state.pending = state.pending.filter((p) => p.id !== pending.id);
       state.nodes.push({
         id: pending.id, parentId: null, rootId: pending.id, depth: 0, mode: state.mode,
         sourceText: text, label: '', principle: '', essence: '', reasoning: '', keywords: [],
-        thinking: '', createdAt: Date.now(), error: err.message, retry: { text, mode: state.mode, parentId: null, kind: 'root' },
+        thinking: '', guidance: '', isActionable: false, createdAt: Date.now(),
+        error: err.message, retry: { text, mode: state.mode, parentId: null, kind: 'root', hint: '' },
       });
+      state.currentRootId = pending.id;
       toast('拆解失败：' + err.message, true);
     } finally {
       state.pending = state.pending.filter((p) => p.id !== pending.id);
@@ -193,37 +353,29 @@
     }
   }
 
-  /* ---------------- 继续往前推（可携带用户补充文本） ---------------- */
+  /* ---------------- 继续往前推 ---------------- */
   async function deriveFrom(nodeId, hint) {
     const node = state.nodes.find((n) => n.id === nodeId);
     if (!node) return;
-    // 防重复：该节点已有推导进行中则忽略
     if (state.pending.some((p) => p.kind === 'child' && p.parentId === node.id)) {
       toast('该节点正在推导中，请稍候…');
       return;
     }
     const pending = { id: uid(), kind: 'child', mode: 'derive', text: node.principle, parentId: node.id, hint: hint || '' };
     state.pending.push(pending);
-    if (node.rootId) state.expanded.add(node.rootId); // 保证所属会话展开，能看到推导进度
-    delete state.deriveDrafts[node.id]; // 已提交，清掉草稿
+    state.currentRootId = node.rootId;
+    delete state.deriveDrafts[node.id];
     renderAll();
 
     try {
       const context = { depth: node.depth, ancestors: ancestorsOf(node).map((a) => ({ label: a.label, principle: a.principle, depth: a.depth })) };
       const res = await apiPost('/api/derive', { text: node.principle, mode: 'derive', context, hint: hint || '' });
       const child = {
-        id: pending.id,
-        parentId: node.id,
-        rootId: node.rootId,
-        depth: node.depth + 1,
-        mode: 'derive',
-        sourceText: node.principle,
-        label: res.data.label || '',
-        principle: res.data.principle || '',
-        essence: '',
-        reasoning: res.data.reasoning || '',
+        id: pending.id, parentId: node.id, rootId: node.rootId, depth: node.depth + 1, mode: 'derive',
+        sourceText: node.principle, label: res.data.label || '', principle: res.data.principle || '',
+        essence: '', reasoning: res.data.reasoning || '',
         keywords: Array.isArray(res.data.keywords) ? res.data.keywords : [],
-        thinking: res.thinking || '',
+        thinking: res.thinking || '', guidance: hint || '', isActionable: !!res.data.isActionable,
         createdAt: Date.now(),
       };
       state.nodes.push(child);
@@ -232,13 +384,39 @@
       state.nodes.push({
         id: pending.id, parentId: node.id, rootId: node.rootId, depth: node.depth + 1, mode: 'derive',
         sourceText: node.principle, label: '', principle: '', essence: '', reasoning: '', keywords: [],
-        thinking: '', createdAt: Date.now(), error: err.message, retry: { text: node.principle, mode: 'derive', parentId: node.id, kind: 'child', hint: hint || '' },
+        thinking: '', guidance: hint || '', isActionable: false, createdAt: Date.now(),
+        error: err.message, retry: { text: node.principle, mode: 'derive', parentId: node.id, kind: 'child', hint: hint || '' },
       });
       toast('推导失败：' + err.message, true);
     } finally {
       state.pending = state.pending.filter((p) => p.id !== pending.id);
       persist();
       renderAll();
+    }
+  }
+
+  async function deriveInternal(pending, text, mode, parentId) {
+    try {
+      const parent = state.nodes.find((n) => n.id === parentId);
+      const ctx = parent ? { depth: parent.depth, ancestors: ancestorsOf(parent).map((a) => ({ label: a.label, principle: a.principle, depth: a.depth })) } : null;
+      const res = await apiPost('/api/derive', { text, mode: 'derive', context: ctx, hint: pending.hint || '' });
+      const parent2 = state.nodes.find((n) => n.id === parentId);
+      const depth = parent2 ? parent2.depth + 1 : 0;
+      state.nodes.push({
+        id: pending.id, parentId, rootId: parent2 ? parent2.rootId : pending.id, depth, mode: 'derive',
+        sourceText: text, label: res.data.label || '', principle: res.data.principle || '',
+        essence: '', reasoning: res.data.reasoning || '',
+        keywords: Array.isArray(res.data.keywords) ? res.data.keywords : [],
+        thinking: res.thinking || '', guidance: pending.hint || '', isActionable: !!res.data.isActionable,
+        createdAt: Date.now(),
+      });
+    } catch (err) {
+      state.nodes.push({
+        id: pending.id, parentId, rootId: pending.id, depth: 0, mode: 'derive',
+        sourceText: text, label: '', principle: '', essence: '', reasoning: '', keywords: [],
+        thinking: '', guidance: pending.hint || '', isActionable: false, createdAt: Date.now(),
+        error: err.message, retry: { text, mode: 'derive', parentId, kind: 'child', hint: pending.hint || '' },
+      });
     }
   }
 
@@ -249,7 +427,6 @@
     const { text, mode, parentId, kind, hint } = node.retry;
     const pending = { id: uid(), kind, mode, text, parentId, hint: hint || '' };
     state.pending.push(pending);
-    if (node.rootId) state.expanded.add(node.rootId);
     renderAll();
     const doIt = kind === 'root' ? submitInputInternal : deriveInternal;
     doIt(pending, text, mode, parentId).finally(() => {
@@ -267,276 +444,215 @@
         sourceText: text, label: res.data.label || '', principle: res.data.principle || '',
         essence: res.data.essence || '', reasoning: res.data.reasoning || '',
         keywords: Array.isArray(res.data.keywords) ? res.data.keywords : [],
-        thinking: res.thinking || '', createdAt: Date.now(),
+        thinking: res.thinking || '', guidance: '', isActionable: !!res.data.isActionable,
+        createdAt: Date.now(),
       });
+      state.currentRootId = pending.id;
     } catch (err) {
       state.nodes.push({
         id: pending.id, parentId: null, rootId: pending.id, depth: 0, mode,
         sourceText: text, label: '', principle: '', essence: '', reasoning: '', keywords: [],
-        thinking: '', createdAt: Date.now(), error: err.message, retry: { text, mode, parentId: null, kind: 'root' },
+        thinking: '', guidance: '', isActionable: false, createdAt: Date.now(),
+        error: err.message, retry: { text, mode, parentId: null, kind: 'root', hint: '' },
       });
+      state.currentRootId = pending.id;
     }
   }
 
-  async function deriveInternal(pending, text, mode, parentId) {
-    try {
-      const parent = state.nodes.find((n) => n.id === parentId);
-      const ctx = parent ? { depth: parent.depth, ancestors: ancestorsOf(parent).map((a) => ({ label: a.label, principle: a.principle, depth: a.depth })) } : null;
-      const res = await apiPost('/api/derive', { text, mode: 'derive', context: ctx, hint: pending.hint || '' });
-      const parent2 = state.nodes.find((n) => n.id === parentId);
-      const depth = parent2 ? parent2.depth + 1 : 0;
-      state.nodes.push({
-        id: pending.id, parentId, rootId: parent2 ? parent2.rootId : pending.id, depth, mode: 'derive',
-        sourceText: text, label: res.data.label || '', principle: res.data.principle || '',
-        essence: '', reasoning: res.data.reasoning || '',
-        keywords: Array.isArray(res.data.keywords) ? res.data.keywords : [],
-        thinking: res.thinking || '', createdAt: Date.now(),
-      });
-    } catch (err) {
-      state.nodes.push({
-        id: pending.id, parentId, rootId: pending.id, depth: 0, mode: 'derive',
-        sourceText: text, label: '', principle: '', essence: '', reasoning: '', keywords: [],
-        thinking: '', createdAt: Date.now(), error: err.message, retry: { text, mode: 'derive', parentId, kind: 'child', hint: pending.hint || '' },
-      });
-    }
-  }
-
-  /* ---------------- 渲染：会话链（层次化折叠） ---------------- */
-  function buildChildrenMap() {
-    const childrenOf = new Map();
-    for (const n of state.nodes) {
-      if (n.parentId == null) continue;
-      if (!childrenOf.has(n.parentId)) childrenOf.set(n.parentId, []);
-      childrenOf.get(n.parentId).push(n);
-    }
-    for (const arr of childrenOf.values()) arr.sort((a, b) => a.createdAt - b.createdAt);
-    return childrenOf;
-  }
-
-  /** 某条链的节点总数与最大层级 */
-  function chainStats(rootId, childrenOf) {
-    let count = 0, maxDepth = 0;
-    const stack = [rootId];
-    while (stack.length) {
-      const id = stack.pop();
-      const kids = childrenOf.get(id) || [];
-      for (const k of kids) {
-        count++;
-        if (k.depth > maxDepth) maxDepth = k.depth;
-        stack.push(k.id);
-      }
-    }
-    return { count: count + 1, maxDepth };
-  }
-
-  /** 从某个子节点向上找到链的 rootId */
-  function findRootOf(nodeId) {
-    let cur = state.nodes.find((n) => n.id === nodeId);
-    while (cur && cur.parentId != null) {
-      cur = state.nodes.find((n) => n.id === cur.parentId);
-    }
-    return cur ? cur.id : null;
-  }
-
-  function renderChains() {
-    saveDeriveDrafts(); // 重建前暂存各卡片输入框内容，避免丢失
-    const scroll = chainEl.scrollTop;
-    chainEl.innerHTML = '';
-    const childrenOf = buildChildrenMap();
-
-    // 保证进行中的推导（含新会话）所属会话处于展开态
-    for (const p of state.pending) {
-      if (p.kind === 'root') state.expanded.add(p.id);
-      else {
-        const rid = findRootOf(p.parentId);
-        if (rid) state.expanded.add(rid);
-      }
-    }
-
-    const roots = state.nodes.filter((n) => n.parentId == null).sort((a, b) => a.createdAt - b.createdAt);
-    const rootPendings = state.pending.filter((p) => p.kind === 'root');
-    const hasData = roots.length > 0 || state.pending.length > 0;
-
-    if (!hasData) {
-      if (!emptyEl.parentNode) chainEl.appendChild(emptyEl);
-      emptyEl.style.display = '';
-      $('#chainStats').textContent = '';
+  /** 重新推导本层：删除链的最后一个节点，用相同参数（含原补充）重新生成 */
+  function rederiveLast() {
+    if (!state.currentRootId) return;
+    const chain = chainNodesOf(state.currentRootId);
+    const last = chain[chain.length - 1];
+    if (!last || last.depth === 0) { toast('当前没有可重新推导的层级', true); return; }
+    if (state.pending.some((p) => p.kind === 'child' && p.parentId === last.parentId)) {
+      toast('正在推导中，请稍候…');
       return;
     }
-    emptyEl.style.display = 'none';
-
-    const frag = document.createDocumentFragment();
-    let sessionIdx = 0;
-
-    // 已完成的会话（每条链折叠为一张会话卡片）
-    for (const root of roots) {
-      sessionIdx++;
-      frag.appendChild(buildSessionCard(sessionIdx, root, childrenOf));
-    }
-
-    // 进行中的新会话（自动展开，内部显示加载卡）
-    for (const p of rootPendings) {
-      sessionIdx++;
-      frag.appendChild(buildPendingSessionCard(sessionIdx, p));
-    }
-
-    chainEl.appendChild(frag);
-    chainEl.scrollTop = scroll;
-
-    const total = state.nodes.length;
-    const maxDepth = state.nodes.reduce((m, n) => Math.max(m, n.depth), 0);
-    const chainCount = roots.length + rootPendings.length;
-    $('#chainStats').textContent = total ? `${chainCount} 条链 · ${total} 个节点 · 最深 L${maxDepth}` : '';
-  }
-
-  /** 会话卡片：折叠 = 一行摘要；展开 = 内部节点链 */
-  function buildSessionCard(idx, root, childrenOf) {
-    const el = document.createElement('div');
-    const rootId = root.id;
-    const expanded = state.expanded.has(rootId);
-    el.className = 'session-card' + (expanded ? ' open' : '');
-    el.dataset.root = rootId;
-    el.style.setProperty('--nc', colorOf(root.depth));
-
-    const meta = MODE_META[root.mode] || MODE_META.goal;
-    const { count, maxDepth } = chainStats(rootId, childrenOf);
-    const title = root.label || shortStr(root.sourceText, 20) || '（未命名）';
-    const sub = shortStr(root.principle, 42);
-
-    const head = document.createElement('div');
-    head.className = 'session-head';
-    head.innerHTML = `
-      <span class="session-chevron">▸</span>
-      <span class="session-mode">${meta.icon}</span>
-      <span class="session-title">${escapeHtml(title)}</span>
-      <span class="session-meta">L0–L${maxDepth} · ${count} 个节点 · ${fmtTime(root.createdAt)}</span>
-      <button class="action-btn session-del" data-act="del-session" title="删除整条会话">🗑</button>`;
-    head.querySelector('.session-del').addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (confirm(`确定删除这条会话（共 ${count} 个节点）吗？`)) deleteNode(rootId);
-    });
-    head.addEventListener('click', () => toggleSession(rootId));
-    el.appendChild(head);
-
-    if (expanded) {
-      const body = document.createElement('div');
-      body.className = 'session-body';
-      buildChainCards(body, root, childrenOf);
-      el.appendChild(body);
-    }
-    return el;
-  }
-
-  /** 进行中的新会话卡片（展开 + 加载卡） */
-  function buildPendingSessionCard(idx, p) {
-    const el = document.createElement('div');
-    el.className = 'session-card open pending-session';
-    el.dataset.root = p.id;
-    el.style.setProperty('--nc', '#22d3ee');
-    const meta = MODE_META[p.mode] || MODE_META.goal;
-    const head = document.createElement('div');
-    head.className = 'session-head';
-    head.innerHTML = `
-      <span class="session-chevron">▾</span>
-      <span class="session-mode">${meta.icon}</span>
-      <span class="session-title">${escapeHtml(shortStr(p.text, 20))}</span>
-      <span class="session-meta">新会话 · ${meta.label}</span>`;
-    el.appendChild(head);
-    const body = document.createElement('div');
-    body.className = 'session-body';
-    body.appendChild(buildPendingCard(p));
-    el.appendChild(body);
-    return el;
-  }
-
-  function toggleSession(rootId) {
-    if (state.expanded.has(rootId)) state.expanded.delete(rootId);
-    else state.expanded.add(rootId);
+    const parentId = last.parentId;
+    const hint = last.guidance || '';
+    state.nodes = state.nodes.filter((n) => n.id !== last.id);
+    delete state.summaries[state.currentRootId];
     persist();
     renderAll();
+    toast('🔄 正在重新推导本层…');
+    deriveFrom(parentId, hint);
   }
 
-  /** 递归渲染一条链的节点卡片（带向下箭头） */
-  function buildChainCards(frag, root, childrenOf) {
-    frag.appendChild(buildNodeCard(root));
-    const renderKids = (parentId) => {
-      const kids = childrenOf.get(parentId) || [];
-      for (const kid of kids) {
-        const arrow = document.createElement('div');
-        arrow.className = 'chain-arrow';
-        arrow.innerHTML = `<div class="line"></div><div class="arr">▼</div>`;
-        frag.appendChild(arrow);
-        frag.appendChild(buildNodeCard(kid));
-        renderKids(kid.id);
+  function deleteNode(id) {
+    const ids = new Set([id]);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const n of state.nodes) {
+        if (ids.has(n.parentId) && !ids.has(n.id)) { ids.add(n.id); changed = true; }
       }
-    };
-    renderKids(root.id);
-    return frag;
+    }
+    const removedRoots = state.nodes.filter((n) => ids.has(n.id) && n.parentId == null).map((n) => n.id);
+    state.nodes = state.nodes.filter((n) => !ids.has(n.id));
+    removedRoots.forEach((rid) => delete state.summaries[rid]);
+    if (state.currentRootId && ids.has(state.currentRootId)) {
+      const rest = sessions();
+      state.currentRootId = rest.length ? rest[0].id : null;
+    }
+    persist();
+    renderAll();
+    toast('已删除节点及其子节点');
   }
 
+  /* ---------------- 渲染：主区 ---------------- */
+  function saveDeriveDrafts() {
+    document.querySelectorAll('.node-card[data-id] .derive-input').forEach((input) => {
+      const card = input.closest('.node-card');
+      if (card && card.dataset.id) state.deriveDrafts[card.dataset.id] = input.value;
+    });
+  }
+
+  function renderMain() {
+    saveDeriveDrafts();
+    const hasData = state.nodes.length > 0 || state.pending.length > 0;
+
+    if (!hasData) {
+      mainContent.innerHTML = `
+        <div class="main-empty">
+          <div class="empty-icon">🧭</div>
+          <p>从上方输入一个目的，或粘贴一段随心所想的长文本</p>
+          <p class="empty-sub">我会拆出达成它的前置目的（“先要…”，一层层往前推），全程大白话，直到一听就懂。</p>
+        </div>`;
+      return;
+    }
+
+    // 保证存在当前会话
+    if (!state.currentRootId) {
+      const roots = sessions();
+      state.currentRootId = roots.length ? roots[0].id : null;
+    }
+
+    const childrenOf = buildChildrenMap();
+    const root = state.nodes.find((n) => n.id === state.currentRootId);
+    const rootPending = state.pending.find((p) => p.kind === 'root');
+    const frag = document.createDocumentFragment();
+
+    if (root) {
+      frag.appendChild(buildGoalCard(root));
+
+      if (state.chainCollapsed) {
+        const placeholder = document.createElement('div');
+        placeholder.className = 'chain-collapsed';
+        const { count, maxDepth } = chainStats(root.id);
+        placeholder.innerHTML = `本轮已收起（L0–L${maxDepth} · ${count} 个节点）— 点击展开`;
+        placeholder.addEventListener('click', () => {
+          state.chainCollapsed = false;
+          persist();
+          renderAll();
+        });
+        frag.appendChild(placeholder);
+      } else {
+        const chainWrap = document.createElement('div');
+        appendNodeWithKids(chainWrap, root, childrenOf);
+        frag.appendChild(chainWrap);
+      }
+
+      frag.appendChild(buildChainActions(root));
+      frag.appendChild(buildSummaryCard(root.id));
+    } else if (rootPending) {
+      // 新会话加载中
+      frag.appendChild(buildPendingCard(rootPending));
+    }
+
+    mainContent.innerHTML = '';
+    mainContent.appendChild(frag);
+  }
+
+  function appendNodeWithKids(frag, node, childrenOf) {
+    frag.appendChild(buildNodeCard(node));
+    // 进行中的子推导
+    for (const pk of state.pending.filter((p) => p.kind === 'child' && p.parentId === node.id)) {
+      frag.appendChild(chainArrow());
+      frag.appendChild(buildPendingCard(pk));
+    }
+    for (const kid of childrenOf.get(node.id) || []) {
+      frag.appendChild(chainArrow());
+      appendNodeWithKids(frag, kid, childrenOf);
+    }
+  }
+
+  function chainArrow() {
+    const el = document.createElement('div');
+    el.className = 'chain-arrow';
+    el.innerHTML = `<div class="line"></div><div class="arr">▼</div>`;
+    return el;
+  }
+
+  /* ---------- 目标卡片 ---------- */
+  function buildGoalCard(root) {
+    const el = document.createElement('div');
+    el.className = 'goal-card';
+    const meta = MODE_META[root.mode] || MODE_META.goal;
+    const sourceHtml = root.sourceText
+      ? `<details class="goal-source"><summary>📥 展开原始输入（${root.sourceText.length} 字）</summary><pre>${escapeHtml(root.sourceText)}</pre></details>`
+      : '';
+    el.innerHTML = `
+      <div class="goal-tag">🎯 你的目标 · ${meta.icon} ${meta.label}</div>
+      <div class="goal-essence">${escapeHtml(sessionEssence(root))}</div>
+      ${sourceHtml}`;
+    return el;
+  }
+
+  /* ---------- 节点卡片 ---------- */
   function buildNodeCard(node) {
     const el = document.createElement('div');
     const color = colorOf(node.depth);
-    el.className = 'node-card';
+    el.className = 'node-card' + (node.isActionable ? ' actionable' : '');
     el.dataset.id = node.id;
     el.style.setProperty('--node-color', color);
-    const meta = MODE_META[node.mode] || MODE_META.goal;
-    const time = fmtTime(node.createdAt);
+    const meta = MODE_META[node.mode] || MODE_META.derive;
 
     if (node.error) {
       el.classList.add('error');
       el.innerHTML = `
         <div class="node-top">
-          <span class="depth-badge">L${node.depth}</span>
+          <span class="depth-badge">第 ${node.depth} 层</span>
           <span class="mode-badge">⚠ 失败</span>
-          <span class="node-time">${time}</span>
+          <span class="node-time">${fmtTime(node.createdAt)}</span>
         </div>
         <div class="error-msg">${escapeHtml(node.error)}</div>
         <div class="node-actions">
-          <button class="action-btn primary">↻ 重试</button>
+          <button class="action-btn">↻ 重试</button>
           <button class="action-btn" data-act="del">🗑 删除</button>
         </div>`;
-      el.querySelector('.action-btn.primary').addEventListener('click', () => retryNode(node.id));
-      el.querySelector('[data-act="del"]').addEventListener('click', () => { deleteNode(node.id); });
+      el.querySelector('.action-btn').addEventListener('click', () => retryNode(node.id));
+      el.querySelector('[data-act="del"]').addEventListener('click', () => deleteNode(node.id));
       return el;
     }
 
-    const kwHtml = node.keywords && node.keywords.length
-      ? `<div class="node-keywords">${node.keywords.map((k) => `<span class="kw">${escapeHtml(k)}</span>`).join('')}</div>` : '';
+    const labelHtml = node.label
+      ? `<div class="node-label">${escapeHtml(node.label)}<span class="origin">由 “${escapeHtml(shortStr(node.depth > 0 ? (state.nodes.find((n) => n.id === node.parentId)?.label || node.sourceText) : node.sourceText, 12))}” ${node.depth === 0 ? '' : '往前推'}</span></div>` : '';
 
-    const essenceHtml = node.essence
-      ? `<div class="node-block"><div class="node-block-tag" style="--block-color:#fbbf24"><span class="tag-icon">📌</span>他真正想要的</div>
-         <div class="node-block-text">${escapeHtml(node.essence)}</div></div>` : '';
+    const guidanceHtml = node.guidance
+      ? `<div class="guidance-tag"><b>结合你的补充：</b>${escapeHtml(node.guidance)}</div>` : '';
 
     const reasoningHtml = node.reasoning
-      ? `<div class="node-block"><div class="node-block-tag" style="--block-color:#a78bfa"><span class="tag-icon">🧠</span>为什么</div>
-         <div class="node-block-text">${escapeHtml(node.reasoning)}</div></div>` : '';
+      ? `<details class="think-block"><summary>🧠 为什么（展开看推导依据）</summary><pre>${escapeHtml(node.reasoning)}</pre></details>` : '';
 
     const thinkHtml = node.thinking
       ? `<details class="think-block"><summary>💭 模型思考过程（可展开）</summary><pre>${escapeHtml(node.thinking)}</pre></details>` : '';
 
-    const sourceHtml = node.depth === 0
-      ? `<div class="node-block"><div class="node-block-tag" style="--block-color:#64748b"><span class="tag-icon">📥</span>原始输入</div>
-         <div class="node-block-text">${escapeHtml(node.sourceText)}</div></div>` : '';
-
-    const labelText = escapeHtml(node.label || '（未命名）');
-    const origin = node.depth === 0
-      ? `<span class="origin">${meta.icon} ${meta.label}</span>`
-      : `<span class="origin">由 “${escapeHtml(shortStr(state.nodes.find((n) => n.id === node.parentId)?.label || node.sourceText, 12))}” 往前推</span>`;
+    const kwHtml = node.keywords && node.keywords.length
+      ? `<div class="node-keywords">${node.keywords.map((k) => `<span class="kw">${escapeHtml(k)}</span>`).join('')}</div>` : '';
 
     el.innerHTML = `
       <div class="node-top">
         <span class="depth-badge">第 ${node.depth} 层${node.depth === 0 ? ' · 原始' : ''}</span>
         <span class="mode-badge">${meta.icon} ${meta.label}</span>
-        <span class="node-time">${time}</span>
+        ${node.isActionable ? '<span class="action-badge">⚡ 现在就能做</span>' : ''}
+        <span class="node-time">${fmtTime(node.createdAt)}</span>
       </div>
-      <div class="node-label">${labelText}${origin}</div>
-      ${sourceHtml}
-      ${essenceHtml}
-      <div class="node-block"><div class="node-block-tag" style="--block-color:${color}"><span class="tag-icon">🎯</span>达成它的前置目的</div>
-        <div class="node-block-text">${escapeHtml(node.principle)}</div></div>
-      ${reasoningHtml}
+      ${labelHtml}
+      <div class="node-principle">${escapeHtml(node.principle)}</div>
+      ${guidanceHtml}
       ${kwHtml}
+      ${reasoningHtml}
       ${thinkHtml}
       <div class="node-actions">
         <button class="action-btn" data-act="copy">📋 复制</button>
@@ -550,12 +666,12 @@
         <textarea class="derive-input" rows="2" maxlength="2000"
           placeholder="例如：我特别爱吃零食、控制不住；或者：我只有周末有时间……"></textarea>
         <div class="derive-actions">
-          <button class="action-btn primary" data-act="derive-go">⚡ 继续往前推</button>
+          <button class="action-btn" data-act="derive-go">⚡ 继续往前推</button>
         </div>
       </div>`;
 
     const deriveInput = el.querySelector('.derive-input');
-    deriveInput.value = state.deriveDrafts[node.id] || ''; // 恢复渲染前未提交的草稿
+    deriveInput.value = state.deriveDrafts[node.id] || '';
 
     const goBtn = el.querySelector('[data-act="derive-go"]');
     const deriving = state.pending.some((p) => p.kind === 'child' && p.parentId === node.id);
@@ -563,10 +679,8 @@
       goBtn.disabled = true;
       goBtn.textContent = '⏳ 推导中…';
     }
-    goBtn.addEventListener('click', () => {
-      const hint = deriveInput.value.trim();
-      deriveFrom(node.id, hint);
-    });
+    goBtn.addEventListener('click', () => deriveFrom(node.id, deriveInput.value.trim()));
+
     el.querySelector('[data-act="copy"]').addEventListener('click', () => {
       navigator.clipboard.writeText(node.principle).then(
         () => toast('已复制到剪贴板'),
@@ -577,16 +691,6 @@
     return el;
   }
 
-  function shortStr(s, n) { return s && s.length > n ? s.slice(0, n - 1) + '…' : s; }
-
-  /** 把当前 DOM 中所有"补充文本"输入框的内容暂存起来（供渲染重建后恢复） */
-  function saveDeriveDrafts() {
-    document.querySelectorAll('.node-card[data-id] .derive-input').forEach((input) => {
-      const card = input.closest('.node-card');
-      if (card && card.dataset.id) state.deriveDrafts[card.dataset.id] = input.value;
-    });
-  }
-
   function buildPendingCard(p) {
     const el = document.createElement('div');
     const meta = MODE_META[p.mode] || MODE_META.derive;
@@ -594,9 +698,8 @@
     el.dataset.pendingId = p.id;
     el.innerHTML = `
       <div class="node-top">
-        <span class="depth-badge">${p.kind === 'root' ? 'L0' : '↓'}</span>
+        <span class="depth-badge">${p.kind === 'root' ? '第 0 层' : '↓'}</span>
         <span class="mode-badge">${meta.icon} ${meta.label}</span>
-        <span class="node-time">${fmtTime(Date.now())}</span>
       </div>
       <div class="loading-line">
         <div class="spinner"></div>
@@ -614,62 +717,129 @@
       if (statusEl) statusEl.textContent = meta.statuses[idx % meta.statuses.length];
       idx++;
     }, 2600);
-    el._timer = timer;
     return el;
   }
 
-  function deleteNode(id) {
-    const ids = new Set([id]);
-    let changed = true;
-    while (changed) {
-      changed = false;
-      for (const n of state.nodes) {
-        if (ids.has(n.parentId) && !ids.has(n.id)) { ids.add(n.id); changed = true; }
-      }
+  /* ---------- 底部操作条 ---------- */
+  function buildChainActions(root) {
+    const el = document.createElement('div');
+    el.className = 'chain-actions';
+    const chain = chainNodesOf(root.id);
+    const canRedo = chain.length > 1;
+    const pending = state.pending.length > 0;
+    const collapsed = state.chainCollapsed;
+    const last = chain[chain.length - 1];
+
+    const btnDerive = mkActionBtn('🔁 继续推导（+补充想法）', 'ca-derive');
+    btnDerive.addEventListener('click', () => {
+      if (state.chainCollapsed) { state.chainCollapsed = false; persist(); renderAll(); }
+      // 滚动到最后一个节点的输入框并聚焦
+      setTimeout(() => {
+        const cards = document.querySelectorAll('.node-card[data-id]');
+        const lastCard = cards[cards.length - 1];
+        if (lastCard) {
+          lastCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          const input = lastCard.querySelector('.derive-input');
+          if (input) setTimeout(() => input.focus(), 450);
+        }
+      }, 60);
+    });
+
+    const btnSummary = mkActionBtn('📋 生成总结', 'ca-summary');
+    btnSummary.addEventListener('click', summarize);
+
+    const btnRedo = mkActionBtn('🔄 重新推导本层', 'ca-redo');
+    btnRedo.disabled = !canRedo || pending;
+    btnRedo.addEventListener('click', rederiveLast);
+
+    const btnCollapse = mkActionBtn(collapsed ? '📂 展开本轮' : '📁 收起本轮', 'ca-collapse');
+    btnCollapse.addEventListener('click', () => {
+      state.chainCollapsed = !state.chainCollapsed;
+      persist();
+      renderAll();
+    });
+
+    el.appendChild(btnDerive);
+    el.appendChild(btnSummary);
+    el.appendChild(btnRedo);
+    el.appendChild(btnCollapse);
+    return el;
+
+    function mkActionBtn(label, cls) {
+      const b = document.createElement('button');
+      b.className = 'btn btn-small ' + cls;
+      b.textContent = label;
+      return b;
     }
-    state.nodes = state.nodes.filter((n) => !ids.has(n.id));
-    // 清理已不存在的会话展开状态
-    for (const rid of [...state.expanded]) {
-      if (!state.nodes.some((n) => n.id === rid)) state.expanded.delete(rid);
+  }
+
+  /* ---------- 总结卡片 ---------- */
+  function buildSummaryCard(rootId) {
+    const el = document.createElement('div');
+    el.className = 'summary-card';
+    const data = state.summaries[rootId];
+
+    const head = document.createElement('div');
+    head.className = 'summary-head';
+    head.innerHTML = '<h3>📋 总结</h3>';
+    const reBtn = document.createElement('button');
+    reBtn.className = 'btn btn-small';
+    reBtn.textContent = data ? '重新生成' : '生成总结';
+    reBtn.addEventListener('click', summarize);
+    head.appendChild(reBtn);
+    el.appendChild(head);
+
+    const body = document.createElement('div');
+    body.className = 'summary-body';
+
+    if (state.summaryLoading) {
+      body.innerHTML = '<div class="summary-loading"><div class="spinner"></div>正在串联整条目的链…</div>';
+    } else if (!data) {
+      body.innerHTML = '<p class="muted">把整条目的链汇总后，生成整体洞察：最终想达成什么、一步步要先达成什么、最该先做的第一件事。</p>';
+    } else {
+      const mdHtml = Md.toHtml(data.summary);
+      const themesHtml = data.themes && data.themes.length
+        ? `<div class="summary-themes"><h4>🔗 共同主题</h4><div class="node-keywords">${data.themes.map((t) => `<span class="kw">${escapeHtml(t)}</span>`).join('')}</div></div>` : '';
+      const actionsHtml = data.actions && data.actions.length
+        ? `<div class="summary-actions"><h4>🚀 行动建议</h4><ul>${data.actions.map((a) => `<li>${escapeHtml(a)}</li>`).join('')}</ul></div>` : '';
+      const thinkHtml = data.thinking
+        ? `<details class="think-block"><summary>💭 模型思考过程（可展开）</summary><pre>${escapeHtml(data.thinking)}</pre></details>` : '';
+      body.innerHTML = `<div class="md">${mdHtml}</div>${themesHtml}${actionsHtml}${thinkHtml}`;
     }
-    state.summary = null;
-    persist();
+    el.appendChild(body);
+    return el;
+  }
+
+  async function summarize() {
+    if (!state.currentRootId) { toast('请先选择一个会话', true); return; }
+    const chain = chainNodesOf(state.currentRootId);
+    if (chain.length === 0) { toast('还没有可总结的节点', true); return; }
+    state.summaryLoading = true;
     renderAll();
-    toast('已删除节点及其子节点');
-  }
-
-  /* ---------------- 渲染：记录列表（树状层次） ---------------- */
-  function renderRecords() {
-    const wrap = $('#records');
-    const roots = state.nodes.filter((n) => n.parentId == null).sort((a, b) => a.createdAt - b.createdAt);
-    $('#recordCount').textContent = state.nodes.length;
-    if (roots.length === 0) {
-      wrap.innerHTML = '<div class="record-empty">还没有任何记录</div>';
-      return;
+    try {
+      const payload = chain.map((n) => ({
+        label: n.label, principle: n.principle, essence: n.essence, depth: n.depth, mode: n.mode,
+      }));
+      const res = await apiPost('/api/summarize', { nodes: payload });
+      state.summaries[state.currentRootId] = {
+        summary: (res.data && res.data.summary) || '',
+        themes: (res.data && res.data.themes) || [],
+        actions: (res.data && res.data.actions) || [],
+        thinking: res.thinking || '',
+      };
+      toast('✅ 总结已生成');
+    } catch (err) {
+      toast('生成总结失败：' + err.message, true);
+    } finally {
+      state.summaryLoading = false;
+      persist();
+      renderAll();
     }
-    wrap.innerHTML = '';
-    const childrenOf = buildChildrenMap();
-    for (const root of roots) appendRecordItem(wrap, root, childrenOf, 0);
   }
 
-  function appendRecordItem(parent, node, childrenOf, depth) {
-    const item = document.createElement('div');
-    item.className = 'record-item' + (depth === 0 ? ' record-root' : '');
-    item.style.setProperty('--nc', colorOf(node.depth));
-    item.style.setProperty('--indent', (depth * 18) + 'px');
-    const kids = childrenOf.get(node.id) || [];
-    item.innerHTML = `
-      <span class="record-depth">L${node.depth}</span>
-      <div class="record-text"><b>${escapeHtml(node.label || '（未命名）')}</b>${escapeHtml(shortStr(node.principle, 46))}</div>
-      ${kids.length ? '<span class="record-branch">' + kids.length + ' ↧</span>' : ''}`;
-    item.addEventListener('click', () => focusNode(node.id));
-    parent.appendChild(item);
-    for (const k of kids) appendRecordItem(parent, k, childrenOf, depth + 1);
-  }
-
-  /* ---------------- 渲染：树形图谱 ---------------- */
+  /* ---------------- 图谱 ---------------- */
   function renderTree() {
-    const hasData = state.nodes.length > 0 || state.pending.length > 0;
+    const hasData = state.nodes.length > 0;
     vizEmpty.style.display = hasData ? 'none' : 'grid';
     if (!hasData) { svg.setAttribute('viewBox', '0 0 100 100'); return; }
     FirstPrinciplesTree.renderTree(svg, state.nodes, focusNode);
@@ -678,9 +848,9 @@
   function focusNode(id) {
     const node = state.nodes.find((n) => n.id === id);
     if (!node) return;
-    // 若所属会话处于折叠态，先展开再定位
-    if (node.rootId && !state.expanded.has(node.rootId)) {
-      state.expanded.add(node.rootId);
+    if (node.rootId !== state.currentRootId) {
+      state.currentRootId = node.rootId;
+      state.chainCollapsed = false;
       persist();
       renderAll();
     }
@@ -692,76 +862,28 @@
     card.classList.add('flash');
   }
 
-  /* ---------------- 渲染：总结 ---------------- */
-  function renderSummary() {
-    const body = $('#summaryBody');
-    if (state.summaryLoading) {
-      body.innerHTML = '<div class="summary-loading"><div class="spinner"></div>正在串联整条目的链…</div>';
-      return;
-    }
-    if (!state.summary) {
-      body.innerHTML = '<p class="muted">把整条目的链汇总后，点击“生成总结”，用大白话概括“最终想达成什么、一步步要先达成什么”。</p>';
-      return;
-    }
-    const s = state.summary;
-    const themesHtml = s.themes && s.themes.length
-      ? `<div class="summary-themes"><h4>🔗 共同主题</h4><div class="node-keywords">${s.themes.map((t) => `<span class="kw">${escapeHtml(t)}</span>`).join('')}</div></div>` : '';
-    const actionsHtml = s.actions && s.actions.length
-      ? `<div class="summary-actions"><h4>🚀 行动建议</h4><ul>${s.actions.map((a) => `<li>${escapeHtml(a)}</li>`).join('')}</ul></div>` : '';
-    body.innerHTML = `<div class="summary-text">${escapeHtml(s.summary)}</div>${themesHtml}${actionsHtml}`;
-  }
-
-  $('#btnSummarize').addEventListener('click', async () => {
-    if (state.nodes.length === 0) { toast('还没有可总结的原理节点', true); return; }
-    state.summaryLoading = true;
-    renderSummary();
-    try {
-      const payload = state.nodes.map((n) => ({
-        label: n.label, principle: n.principle, essence: n.essence, depth: n.depth, mode: n.mode,
-      }));
-      const res = await apiPost('/api/summarize', { nodes: payload });
-      state.summary = res.data || {};
-      toast('✅ 总结已生成');
-    } catch (err) {
-      toast('生成总结失败：' + err.message, true);
-    } finally {
-      state.summaryLoading = false;
-      persist();
-      renderSummary();
-    }
-  });
-
   /* ---------------- 导出 / 清空 ---------------- */
   $('#btnExport').addEventListener('click', exportMarkdown);
 
   function exportMarkdown() {
     if (state.nodes.length === 0) { toast('暂无内容可导出', true); return; }
-    const childrenOf = new Map();
-    for (const n of state.nodes) {
-      if (n.parentId == null) continue;
-      if (!childrenOf.has(n.parentId)) childrenOf.set(n.parentId, []);
-      childrenOf.get(n.parentId).push(n);
-    }
-    for (const arr of childrenOf.values()) arr.sort((a, b) => a.createdAt - b.createdAt);
-    const roots = state.nodes.filter((n) => n.parentId == null).sort((a, b) => a.createdAt - b.createdAt);
-
+    const childrenOf = buildChildrenMap();
+    const roots = sessions().reverse(); // 按时间正序
     const lines = ['# ⚛️ 第一性原理拆解记录', '', `> 生成时间：${new Date().toLocaleString('zh-CN')}`, ''];
     roots.forEach((root, i) => {
-      lines.push(`## 会话 ${i + 1}`, '');
+      lines.push(`## 会话 ${i + 1}：${sessionEssence(root)}`, '');
       walkMd(root, childrenOf, lines, 0);
-      lines.push('');
-    });
-    if (state.summary) {
-      lines.push('## 📋 整体总结', '', state.summary.summary, '');
-      if (state.summary.themes && state.summary.themes.length) {
-        lines.push('**共同主题**：' + state.summary.themes.join('、'), '');
-      }
-      if (state.summary.actions && state.summary.actions.length) {
-        lines.push('**行动建议**：');
-        state.summary.actions.forEach((a) => lines.push(`- ${a}`));
+      const s = state.summaries[root.id];
+      if (s && s.summary) {
+        lines.push('**总结**：' + s.summary, '');
+        if (s.themes && s.themes.length) lines.push('**共同主题**：' + s.themes.join('、'), '');
+        if (s.actions && s.actions.length) {
+          lines.push('**行动建议**：');
+          s.actions.forEach((a) => lines.push(`- ${a}`));
+        }
         lines.push('');
       }
-    }
+    });
     const blob = new Blob([lines.join('\n')], { type: 'text/markdown;charset=utf-8' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -777,36 +899,49 @@
     if (node.depth === 0 && node.sourceText) lines.push(`${indent}> 📥 原始输入：${node.sourceText}`);
     if (node.essence) lines.push(`${indent}> 📌 真正想要的：${node.essence}`);
     lines.push(`${indent}- 🎯 前置目的：${node.principle}`);
+    if (node.guidance) lines.push(`${indent}- 💬 结合补充：${node.guidance}`);
+    if (node.isActionable) lines.push(`${indent}- ⚡ 现在就能做`);
     if (node.reasoning) lines.push(`${indent}- 🧠 为什么：${node.reasoning}`);
-    if (node.keywords && node.keywords.length) lines.push(`${indent}- 🏷 关键词：${node.keywords.join('、')}`);
     lines.push('');
-    const kids = childrenOf.get(node.id) || [];
-    for (const k of kids) walkMd(k, childrenOf, lines, depth + 1);
+    for (const k of childrenOf.get(node.id) || []) walkMd(k, childrenOf, lines, depth + 1);
   }
 
   $('#btnClear').addEventListener('click', () => {
     if (state.nodes.length === 0) { toast('当前没有记录'); return; }
     if (!confirm('确定清空所有拆解记录与图谱吗？')) return;
     state.nodes = [];
-    state.summary = null;
+    state.summaries = {};
+    state.currentRootId = null;
+    state.chainCollapsed = false;
     persist();
     renderAll();
     toast('已清空');
   });
 
-  /* ---------------- 图谱工具栏 ---------------- */
-  $('#zoomIn').addEventListener('click', () => {
-    const cur = svg._fp || { scale: 1, tx: 0, ty: 0 };
-    FirstPrinciplesTree.applyTransform(svg, cur.scale * 1.2, cur.tx, cur.ty);
-  });
-  $('#zoomOut').addEventListener('click', () => {
-    const cur = svg._fp || { scale: 1, tx: 0, ty: 0 };
-    FirstPrinciplesTree.applyTransform(svg, Math.max(cur.scale / 1.2, 0.15), cur.tx, cur.ty);
-  });
-  $('#zoomFit').addEventListener('click', () => {
-    const vb = svg.viewBox.baseVal;
-    FirstPrinciplesTree.fitToView(svg, vb.width, vb.height);
-  });
+  /* ---------------- 图谱缩放（侧栏） ---------------- */
+  function ensureVizTools() {
+    const wrap = $('#vizWrap');
+    if (wrap.querySelector('.viz-tools')) return;
+    const tools = document.createElement('div');
+    tools.className = 'viz-tools';
+    tools.innerHTML = `
+      <button class="icon-btn" data-viz="out" title="缩小">−</button>
+      <button class="icon-btn" data-viz="in" title="放大">+</button>
+      <button class="icon-btn" data-viz="fit" title="适应窗口">⤢</button>`;
+    tools.querySelector('[data-viz="out"]').addEventListener('click', () => {
+      const cur = svg._fp || { scale: 1, tx: 0, ty: 0 };
+      FirstPrinciplesTree.applyTransform(svg, Math.max(cur.scale / 1.2, 0.15), cur.tx, cur.ty);
+    });
+    tools.querySelector('[data-viz="in"]').addEventListener('click', () => {
+      const cur = svg._fp || { scale: 1, tx: 0, ty: 0 };
+      FirstPrinciplesTree.applyTransform(svg, cur.scale * 1.2, cur.tx, cur.ty);
+    });
+    tools.querySelector('[data-viz="fit"]').addEventListener('click', () => {
+      const vb = svg.viewBox.baseVal;
+      FirstPrinciplesTree.fitToView(svg, vb.width, vb.height);
+    });
+    wrap.appendChild(tools);
+  }
 
   /* ---------------- 健康检查 ---------------- */
   async function checkHealth() {
@@ -825,14 +960,18 @@
 
   /* ---------------- 汇总渲染 ---------------- */
   function renderAll() {
-    renderChains();
+    renderMain();
+    renderSidebar();
     renderTree();
-    renderRecords();
-    renderSummary();
+    ensureVizTools();
   }
 
   /* ---------------- 启动 ---------------- */
   restore();
+  if (!state.currentRootId) {
+    const roots = sessions();
+    if (roots.length) state.currentRootId = roots[0].id;
+  }
   FirstPrinciplesTree.setupPanZoom(svg);
   renderAll();
   checkHealth();
