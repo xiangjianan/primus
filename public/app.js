@@ -958,6 +958,34 @@
     }
   }
 
+  /* ---------------- 主题（深色 / 浅色） ---------------- */
+  const THEME_KEY = 'fp-theme';
+  const themeBtn = $('#btnTheme');
+
+  function applyTheme(t, persistIt) {
+    document.documentElement.dataset.theme = t;
+    if (persistIt !== false) {
+      try { localStorage.setItem(THEME_KEY, t); } catch (_) { /* 忽略 */ }
+    }
+    themeBtn.textContent = t === 'dark' ? '☀️' : '🌙';
+    themeBtn.title = t === 'dark' ? '切换到浅色主题' : '切换到深色主题';
+    renderTree(); // 图谱灰阶跟随主题
+  }
+
+  function initTheme() {
+    let t = null;
+    try { t = localStorage.getItem(THEME_KEY); } catch (_) { /* 忽略 */ }
+    if (t !== 'dark' && t !== 'light') {
+      t = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    }
+    applyTheme(t, false);
+  }
+
+  themeBtn.addEventListener('click', () => {
+    applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+    toast('已切换为' + (document.documentElement.dataset.theme === 'dark' ? '深色' : '浅色') + '主题');
+  });
+
   /* ---------------- 汇总渲染 ---------------- */
   function renderAll() {
     renderMain();
@@ -967,6 +995,7 @@
   }
 
   /* ---------------- 启动 ---------------- */
+  initTheme();
   restore();
   if (!state.currentRootId) {
     const roots = sessions();

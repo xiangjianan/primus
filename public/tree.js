@@ -12,10 +12,20 @@
   const V_GAP = 108;  // 层间垂直间距
   const PAD = 24;
 
-  const DEPTH_COLORS = ['#818cf8', '#22d3ee', '#34d399', '#fbbf24', '#fb7185', '#a78bfa', '#f472b6', '#38bdf8'];
+  // 图谱灰阶调色板：从主题 CSS 变量读取（深色主题白→灰，浅色主题黑→灰）
+  let PALETTE = ['#f2f2f4', '#c9c9d0', '#a5a5ad', '#83838c', '#6a6a73', '#585860', '#4a4a51', '#3d3d44'];
+  function refreshPalette() {
+    const cs = getComputedStyle(document.documentElement);
+    const arr = [];
+    for (let i = 0; i < 8; i++) {
+      const v = cs.getPropertyValue(`--tree-c${i}`).trim();
+      arr.push(v || PALETTE[i] || '#8a8a90');
+    }
+    PALETTE = arr;
+  }
 
   function colorOf(depth) {
-    return DEPTH_COLORS[Math.min(Math.max(depth, 0), DEPTH_COLORS.length - 1)];
+    return PALETTE[Math.min(Math.max(depth, 0), PALETTE.length - 1)];
   }
 
   function shortLabel(text, max) {
@@ -62,6 +72,7 @@
   function renderTree(container, nodes, onNodeClick) {
     const svg = container;
     while (svg.firstChild) svg.removeChild(svg.firstChild);
+    refreshPalette(); // 主题变化时更新灰阶
 
     if (!nodes || nodes.length === 0) {
       svg.setAttribute('viewBox', '0 0 100 100');
