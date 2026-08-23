@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>第一性原理引擎 · First Principles Engine</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='0.9em' font-size='90'%3E%E2%9A%9B%EF%B8%8F%3C/text%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="bg-glow bg-glow-1"></div>
+  <div class="bg-glow bg-glow-2"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">⚛️</div>
+      <div>
+        <h1>第一性原理引擎</h1>
+        <p class="brand-sub">First Principles Engine · 拆解到不可再分</p>
+      </div>
+    </div>
+    <div class="top-actions">
+      <span id="healthBadge" class="health-badge" title="后端与模型状态">…</span>
+      <button class="btn btn-ghost" id="btnExport" title="导出全部记录为 Markdown">⬇ 导出</button>
+      <button class="btn btn-ghost danger" id="btnClear" title="清空所有节点">✕ 清空</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <!-- ================= 左列：输入 + 推导链 ================= -->
+    <section class="left-col">
+      <div class="card input-card">
+        <div class="seg" id="modeSeg" role="tablist">
+          <button class="seg-btn active" data-mode="goal" role="tab">🎯 目标拆解</button>
+          <button class="seg-btn" data-mode="text" role="tab">📝 随心所想</button>
+        </div>
+
+        <div class="mode-hint" id="modeHint">
+          输入一个目的（如“减肥”“创业”“学英语”），我会拆出达成它必须先达成的前置目的。
+        </div>
+
+        <textarea id="inputText" rows="4" maxlength="30000"
+          placeholder="例如：我想在三个月内把体重从 80kg 降到 70kg，同时保持精力充沛……"></textarea>
+
+        <div class="input-row">
+          <span class="char-count"><span id="charCount">0</span> / 30000</span>
+          <button class="btn btn-primary" id="btnSubmit">
+            <span class="btn-icon">⚡</span><span>开始拆解</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="chain-head">
+        <h2><span class="chain-dot"></span> 会话 <span id="chainStats" class="chain-stats"></span></h2>
+        <span class="chain-tip">每次输入 = 一条会话，可折叠/展开</span>
+      </div>
+
+      <div id="chain" class="chain">
+        <div class="empty-state" id="emptyState">
+          <div class="empty-icon">🧭</div>
+          <p>从上方输入一个目的，或粘贴一段随心所想的长文本</p>
+          <p class="empty-sub">我会拆出达成它的前置目的（“先要…”，一层层往前推），全程大白话，直到一听就懂。</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 右列：可视化 / 记录 / 总结 ================= -->
+    <aside class="right-col">
+      <div class="card viz-card">
+        <div class="card-head">
+          <h2>🌌 原理图谱</h2>
+          <div class="viz-tools">
+            <button class="icon-btn" id="zoomOut" title="缩小">−</button>
+            <button class="icon-btn" id="zoomIn" title="放大">+</button>
+            <button class="icon-btn" id="zoomFit" title="适应窗口">⤢</button>
+          </div>
+        </div>
+        <div class="viz-wrap" id="vizWrap">
+          <svg id="vizSvg"></svg>
+          <div class="viz-empty" id="vizEmpty">暂无数据<br /><span>从左侧开始第一次拆解</span></div>
+          <div class="viz-tip">滚轮缩放 · 拖拽平移 · 点击节点定位到卡片</div>
+        </div>
+      </div>
+
+      <div class="card records-card">
+        <div class="card-head"><h2>🗂 全部记录 <span id="recordCount" class="badge-num">0</span></h2></div>
+        <div id="records" class="records"></div>
+      </div>
+
+      <div class="card summary-card">
+        <div class="card-head">
+          <h2>📋 总结</h2>
+          <button class="btn btn-small" id="btnSummarize">生成总结</button>
+        </div>
+        <div id="summaryBody" class="summary-body">
+          <p class="muted">把整条目的链汇总后，点击“生成总结”，用大白话概括“最终想达成什么、一步步要先达成什么”。</p>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="tree.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
