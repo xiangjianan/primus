@@ -1010,4 +1010,11 @@
     const vb = svg.viewBox.baseVal;
     if (vb.width > 0) FirstPrinciplesTree.fitToView(svg, vb.width, vb.height);
   });
+
+  // PWA：注册 Service Worker（相对路径，适配子路径部署）
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js').catch(() => { /* 忽略（如不支持/离线） */ });
+    });
+  }
 })();

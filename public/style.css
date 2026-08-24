@@ -163,13 +163,7 @@ body.ws-open .ws-backdrop { opacity: 1; pointer-events: auto; }
 .main-body::-webkit-scrollbar { width: 9px; }
 .main-body::-webkit-scrollbar-thumb { background: var(--surface-3); border-radius: 5px; }
 
-@media (max-width: 900px) {
-  .workspace { position: fixed; left: 0; top: 0; bottom: 0; margin-left: 0; transform: translateX(-100%); }
-  .workspace.hidden { margin-left: 0; transform: translateX(-100%); }
-  .workspace.open { transform: translateX(0); }
-  body.ws-open { overflow: hidden; }
-  .main-body { padding: 14px 14px 60px; }
-}
+
 
 /* ============================================================
    通用组件
@@ -699,3 +693,75 @@ details.think-block pre {
 }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 .toast.err { border-color: var(--danger); color: var(--danger); }
+
+/* ---------- 基础：防键盘缩放 / 触摸行为 ---------- */
+html { touch-action: manipulation; } /* 消除双击缩放与双击延迟 */
+
+/* ============================================================
+   移动端适配（≤900px）
+   ============================================================ */
+@media (max-width: 900px) {
+  .workspace { position: fixed; left: 0; top: 0; bottom: 0; margin-left: 0; transform: translateX(-100%); }
+  .workspace.hidden { margin-left: 0; transform: translateX(-100%); }
+  .workspace.open { transform: translateX(0); }
+  body.ws-open { overflow: hidden; }
+  .main-body { padding: 12px 12px calc(60px + env(safe-area-inset-bottom)); }
+  .ws-head { padding-top: calc(14px + env(safe-area-inset-top)); }
+
+  /* 输入框字号 ≥16px：iOS 聚焦时不自动缩放页面 */
+  #inputText, .derive-input { font-size: 16px; }
+  .input-card { padding: 12px 12px 12px; }
+  .mode-hint { font-size: 12px; line-height: 1.6; }
+
+  /* 触控目标 ≥44px */
+  .seg-btn { padding: 11px 0; font-size: 14px; }
+  .btn { padding: 11px 14px; font-size: 14px; }
+  .btn-small { padding: 9px 12px; font-size: 13px; }
+  .action-btn { padding: 9px 13px; font-size: 13px; }
+  .icon-btn { width: 38px; height: 38px; font-size: 17px; }
+  .sidebar-toggle, #btnTheme { width: 38px; height: 38px; }
+  .derive-go, .derive-actions .action-btn { min-height: 42px; }
+  .main-top { padding: 10px 12px; gap: 8px; }
+
+  /* 侧栏：全宽抽屉 + 更紧凑 */
+  .workspace { width: min(86vw, 340px); }
+  .brand h1 { font-size: 15px; }
+  .history-item { padding: 10px 12px; }
+  .hi-essence { font-size: 12.5px; }
+  .current-session { padding: 12px; }
+
+  /* 节点卡片：更紧凑 + 底部安全区 */
+  .node-card { padding: 12px 13px; }
+  .node-principle { font-size: 14.5px; }
+  .goal-card { padding: 13px 14px; }
+  .goal-card .goal-essence { font-size: 15.5px; }
+
+  /* 操作条：底部贴边 + 横向滚动防换行爆炸 */
+  .chain-actions {
+    position: sticky;
+    bottom: calc(10px + env(safe-area-inset-bottom));
+    z-index: 5;
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 10px 12px;
+    gap: 8px;
+  }
+  .chain-actions .btn { flex-shrink: 0; }
+
+  /* 图谱高度适配 */
+  .viz-wrap { height: 220px; }
+
+  /* 总结卡片 */
+  .summary-card { padding: 13px 14px; }
+
+  /* 思考流高度 */
+  .think-stream { max-height: 110px; }
+}
+
+@media (max-width: 400px) {
+  .goal-card .goal-essence { font-size: 15px; }
+  .node-principle { font-size: 14px; }
+  .derive-tip { display: none; } /* 窄屏隐藏辅助说明，减少换行 */
+}

@@ -37,6 +37,7 @@
 | 🌌 **原理图谱** | 树形可视化，灰阶层级、跟随主题、可缩放平移，点击节点定位卡片 |
 | 🌗 **双主题** | 深色/浅色（黑白灰 + 蓝色强调），跟随系统偏好、可手动切换、持久化 |
 | 💾 **持久化** | 会话数据存 localStorage，刷新不丢；支持导出 Markdown |
+| 📱 **PWA** | 可安装到桌面/主屏幕、离线可用（Service Worker 缓存 App Shell）、移动端键盘弹出不缩放页面 |
 
 ### 界面预览
 
@@ -106,6 +107,13 @@ wrangler pages deploy --project-name first-principles-engine --branch main
 ```
 
 > 线上演示：https://first-principles-engine-1li.pages.dev
+
+### 移动端与 PWA
+
+- **防键盘缩放**：`viewport` 设置 `maximum-scale=1, user-scalable=no, interactive-widget=resizes-content` + `touch-action: manipulation` + 输入框字号 ≥16px（iOS 聚焦不自动放大）
+- **移动端适配**：侧栏抽屉化、触控目标 ≥44px、安全区（刘海屏）、操作条吸底横向滚动、窄屏紧凑布局
+- **PWA**：`manifest.webmanifest`（standalone + 自适应图标）+ `sw.js`（App Shell 预缓存 + 离线可用，`/api/*` 网络优先不缓存）
+- 手机浏览器打开线上地址 → 菜单「添加到主屏幕」即可安装
 
 ## ⚙️ 配置
 
