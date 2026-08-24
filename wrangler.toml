@@ -1,0 +1,10 @@
+# Cloudflare Pages 部署配置
+# 静态资源目录：public/（平台自动托管）
+# API（/api/*）由 functions/ 目录自动编译为 Pages Functions（Workers 运行时）
+name = "first-principles-engine"
+compatibility_date = "2025-01-01"
+pages_build_output_dir = "public"
+
+[vars]
+DEEPSEEK_MODEL = "deepseek-v4-flash"
+DEEPSEEK_BASE_URL = "https://api.deepseek.com"

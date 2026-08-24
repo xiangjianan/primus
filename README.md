@@ -82,6 +82,31 @@ open http://127.0.0.1:3000
 点「收起本轮」→ 折叠当前链；左侧历史记录可随时切回
 ```
 
+## ☁️ 部署到 Cloudflare Pages
+
+项目已适配 [Cloudflare Pages Functions](https://developers.cloudflare.com/pages/functions/)：
+- **静态资源**：`public/`（Pages 平台自动托管）
+- **API（`/api/*`）**：`functions/` 目录编译为 Pages Functions（Workers 运行时，无需 Node 服务器）
+- **配置**：模型名/接口地址在 `wrangler.toml` 的 `[vars]`；API 密钥存为 Cloudflare Secret
+
+```bash
+# 1. 登录 Cloudflare
+wrangler login
+
+# 2. 创建项目（首次）
+wrangler pages project create first-principles-engine --production-branch main
+
+# 3. 配置 API 密钥（Secret，不会进入代码仓库）
+echo "sk-xxxxxxxx" | wrangler pages secret put DEEPSEEK_API_KEY --project-name first-principles-engine
+
+# 4. 部署（若命令卡住，先禁用遥测：WRANGLER_SEND_METRICS=false）
+wrangler pages deploy --project-name first-principles-engine --branch main
+
+# 5. 注意：修改 Secret/环境变量后需重新部署一次才会生效
+```
+
+> 线上演示：https://first-principles-engine-1li.pages.dev
+
 ## ⚙️ 配置
 
 `config.json`（可留空，全部走环境变量）：
@@ -138,8 +163,14 @@ open http://127.0.0.1:3000
 ## 🏗 项目结构
 
 ```
-server.js            # 零依赖 Node 后端：静态服务 + DeepSeek 代理（含自动重试）
-config.json          # API 配置（已 gitignore，不入库）
+server.js            # 零依赖 Node 后端：静态服务 + DeepSeek 代理（含自动重试，本地运行用）
+functions/           # Cloudflare Pages Functions（线上部署用，Workers 运行时）
+  api/_shared.js     #   共享逻辑：提示词 + DeepSeek 调用 + 解析容错
+  api/derive.js      #   POST /api/derive
+  api/summarize.js   #   POST /api/summarize
+  api/health.js      #   GET  /api/health
+wrangler.toml        # Cloudflare Pages 部署配置（[vars] 模型名/接口地址）
+config.json          # 本地 API 配置（已 gitignore，不入库）
 public/
   index.html         # 页面结构（左侧工作空间 + 右侧主推导区）
   style.css          # 双主题（深/浅）Codex 式样式
@@ -148,6 +179,8 @@ public/
   md.js              # 轻量 Markdown 渲染器
 docs/screenshots/    # 界面截图
 ```
+
+> 本地与线上双入口：`node server.js`（本地开发）与 `functions/`（Cloudflare Pages）实现同一套 API，前端无需改动。
 
 ## 🛠 技术栈
 
