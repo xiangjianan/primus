@@ -736,19 +736,19 @@ html { touch-action: manipulation; } /* 消除双击缩放与双击延迟 */
   .goal-card { padding: 13px 14px; }
   .goal-card .goal-essence { font-size: 15.5px; }
 
-  /* 操作条：底部贴边 + 横向滚动防换行爆炸 */
+  /* 操作条：不悬浮，跟随页面流放在最底部；移动端只保留「生成总结」 */
   .chain-actions {
-    position: sticky;
-    bottom: calc(10px + env(safe-area-inset-bottom));
-    z-index: 5;
+    position: static;
     display: flex;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    padding: 10px 12px;
+    flex-wrap: wrap;
+    padding: 11px 13px;
     gap: 8px;
+    margin-top: 2px;
   }
   .chain-actions .btn { flex-shrink: 0; }
+  .chain-actions .ca-derive,
+  .chain-actions .ca-redo,
+  .chain-actions .ca-collapse { display: none; } /* 只留生成总结 */
 
   /* 图谱高度适配 */
   .viz-wrap { height: 220px; }

@@ -261,11 +261,13 @@
   }
 
   $('#btnNewDerive').addEventListener('click', () => {
-    state.currentRootId = null;
+    state.currentRootId = null; // 主区回到初始态（仅清显示，数据保留在历史）
     state.chainCollapsed = false;
     state.summaryLoading = false;
+    state.deriveDrafts = {};    // 清空未提交的补充输入草稿
     persist();
     renderAll();
+    document.querySelector('.main-body').scrollTo({ top: 0 }); // 回到顶部
     inputEl.focus();
     if (isMobile()) closeSidebar();
   });
@@ -510,27 +512,21 @@
 
   function renderMain() {
     saveDeriveDrafts();
-    const hasData = state.nodes.length > 0 || state.pending.length > 0;
+    const root = state.nodes.find((n) => n.id === state.currentRootId);
+    const rootPending = state.pending.find((p) => p.kind === 'root');
 
-    if (!hasData) {
+    // 无当前会话且无进行中的新推导 → 初始态（开始新推导后主区回到空状态）
+    if (!root && !rootPending) {
       mainContent.innerHTML = `
         <div class="main-empty">
           <div class="empty-icon">🧭</div>
-          <p>从上方输入一个目的，或粘贴一段随心所想的长文本</p>
+          <p>输入一个目标，或随便说说你的想法</p>
           <p class="empty-sub">我会拆出达成它的前置目的（“先要…”，一层层往前推），全程大白话，直到一听就懂。</p>
         </div>`;
       return;
     }
 
-    // 保证存在当前会话
-    if (!state.currentRootId) {
-      const roots = sessions();
-      state.currentRootId = roots.length ? roots[0].id : null;
-    }
-
     const childrenOf = buildChildrenMap();
-    const root = state.nodes.find((n) => n.id === state.currentRootId);
-    const rootPending = state.pending.find((p) => p.kind === 'root');
     const frag = document.createDocumentFragment();
 
     if (root) {
@@ -553,8 +549,8 @@
         frag.appendChild(chainWrap);
       }
 
-      frag.appendChild(buildChainActions(root));
       frag.appendChild(buildSummaryCard(root.id));
+      frag.appendChild(buildChainActions(root)); // 操作条放页面最底部
     } else if (rootPending) {
       // 新会话加载中
       frag.appendChild(buildPendingCard(rootPending));
