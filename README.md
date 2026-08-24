@@ -22,16 +22,18 @@
 - 方向：具体目标 → 越来越根本的前置条件 → **「现在就能做」的事**
 - 语言风格：大白话、一句话、可执行（模型硬约束，禁止专业术语/公式/掉书袋）
 
-### 交互能力
+### 界面与交互
 
 | 能力 | 说明 |
 | --- | --- |
-| 🎯 **首次下钻** | 输入目标/长文本，返回 ① essence（一句话核心目标，短输入原样清洗）② 第 1 层前置目的 |
-| 🔁 **逐层下钻** | 每个节点可继续推导，模型结合**【整条链 + 全部历史补充 + 本次补充想法】**生成下一层；硬约束：更前置、不重复、不绕圈 |
-| ⚡ **流式反馈** | 推导进行中实时显示灰色**思考流**（`reasoning_content`）+「正在推导第 N 层…」，结果到达后折叠为正式节点卡片 |
-| ✅ **可执行标记** | `isActionable` 节点显示蓝色高亮 +「⚡ 现在就能做」徽章 |
-| 🗂 **会话管理** | 「收起本轮」归档进左侧历史、主区回到初始态；历史可重新展开（继续推导/重新总结）、hover 删除、多会话独立 |
-| 📋 **总结（markdown）** | 整链大白话总结，四段式：出发目标 → 下钻过程 → 最根本的洞察 → 现在马上能做的第一件事 |
+| 🎯 **输入与提取** | 两种模式：目标拆解（输入目的） / 随心所想（粘贴散乱长文本，先提炼核心意图再下钻） |
+| 🔁 **逐层下钻** | 每个节点可继续推导，推导结合**【整条目的链 + 全部历史补充 + 本次补充想法】**；硬约束：更前置、不重复、不绕圈 |
+| 💬 **补充输入框常驻** | 每个节点下方常驻输入框：填写你的约束/背景/偏好，模型结合它生成更贴合的一层；留空直接推导 |
+| 🛡 **防重复点击** | 推导进行中按钮自动禁用 + 逻辑层双重防护，避免重复生成节点 |
+| ✅ **可执行标记** | `isActionable` 节点显示蓝色高亮边框 +「⚡ 现在就能做」徽章 |
+| 🗂 **会话管理** | 左侧工作空间：「当前会话」卡片 + 「历史记录」列表（点击切换、hover 删除）；「收起本轮」折叠当前链 |
+| 📋 **总结（markdown）** | 整链大白话总结：总体概括 + 共同主题 + 行动建议，markdown 渲染 |
+| 🔄 **重新推导本层** | 对链的最后一层用相同参数（含原补充）重新生成 |
 | 🌌 **原理图谱** | 树形可视化，灰阶层级、跟随主题、可缩放平移，点击节点定位卡片 |
 | 🌗 **双主题** | 深色/浅色（黑白灰 + 蓝色强调），跟随系统偏好、可手动切换、持久化 |
 | 💾 **持久化** | 会话数据存 localStorage，刷新不丢；支持导出 Markdown |
@@ -65,10 +67,10 @@ open http://127.0.0.1:3000
 ## 🧭 使用流程
 
 ```
-初始态：主区一个大输入框「输入一个目标，或随便说说你的想法」
+初始态：主区输入「一个目标，或随便说说你的想法」
   ↓
-首次推导 → 返回 essence（核心目标）+ 第 1 层节点
-  主区变成：目标卡片 + 第 1 层节点
+输入目标/长文本 → 提炼核心意图 + 第 1 层前置目的
+  主区变成：目标卡片 + 节点链
   ↓
 点「继续往下钻」，可选填写「补充想法」
   → 下一层 = 模型结合【整条链 + 全部历史补充 + 本次补充】推导
@@ -77,7 +79,7 @@ open http://127.0.0.1:3000
   ↓
 点「生成总结」→ 整链大白话总结（含马上能做的第一件事）
   ↓
-点「收起本轮」→ 会话归档进左侧历史，主区回到初始态
+点「收起本轮」→ 折叠当前链；左侧历史记录可随时切回
 ```
 
 ## ⚙️ 配置
@@ -89,9 +91,7 @@ open http://127.0.0.1:3000
   "apiKey": "sk-xxxxxxxx",
   "model": "deepseek-v4-flash",
   "baseUrl": "https://api.deepseek.com",
-  "port": 3000,
-  "temperature": 0.4,
-  "maxTokens": 2400
+  "port": 3000
 }
 ```
 
@@ -100,8 +100,6 @@ open http://127.0.0.1:3000
 | `DEEPSEEK_API_KEY` | 必填 | API 密钥（仅存在于服务端） |
 | `DEEPSEEK_MODEL` | `deepseek-v4-flash` | 模型名 |
 | `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | 接口地址（OpenAI 兼容） |
-| `DEEPSEEK_TEMPERATURE` | `0.4` | 采样温度 |
-| `DEEPSEEK_MAX_TOKENS` | `2400` | 单次输出上限 |
 | `PORT` | `3000` | 服务端口 |
 
 ## 📡 API
@@ -114,29 +112,24 @@ open http://127.0.0.1:3000
 {
   "text": "三个月减重10公斤",
   "mode": "goal",
-  "isFirst": true,
   "hint": "我特别爱吃零食，控制不住",
-  "context": { "depth": 0, "ancestors": [{ "label": "...", "principle": "...", "guidance": "...", "depth": 0 }] },
-  "stream": true
+  "context": { "depth": 0, "ancestors": [{ "label": "...", "principle": "...", "depth": 0 }] }
 }
 ```
 
-- `stream: true` 时返回 **SSE 事件流**：
-  1. `data: {"type":"think","delta":"..."}` —— 思考流片段（实时透传 `reasoning_content`）
-  2. `data: {"type":"node","data":{...}}` —— 最终结果 `{ label?, essence?, principle, reasoning, isActionable }`
-  3. `data: {"type":"error","message":"..."}` / `data: {"type":"done"}`
-- 解析容错：`response_format: json_object` + 提取首个 JSON 对象兜底；流式解析失败自动非流式重试一次（放宽 token）
-- `isFirst: true` 时额外返回 `essence`（一句话核心目标）
+- `mode`：`goal`（目标拆解） / `text`（随心所想，返回 essence） / `derive`（继续下钻）
+- `hint`：用户补充想法（推导时结合）
+- `context`：已走过的目的链（继续下钻时携带，避免重复绕圈）
+- 响应：`{ data: { label, principle, essence?, reasoning, keywords, isActionable }, thinking }`
+- 容错：`response_format: json_object` + 提取首个 JSON 对象兜底 + 解析失败自动重试一次（放宽 token）
 
 ### `POST /api/summarize` — 整链总结
 
 ```json
-{
-  "nodes": [{ "label": "...", "principle": "...", "essence": "...", "guidance": "...", "isActionable": true, "depth": 0 }]
-}
+{ "nodes": [{ "label": "...", "principle": "...", "essence": "...", "depth": 0 }] }
 ```
 
-→ `{ "data": { "summary": "markdown 四段式", "themes": [], "actions": [] } }`
+→ `{ "data": { "summary": "markdown 总结", "themes": [], "actions": [] } }`
 
 ### `GET /api/health` — 健康检查
 
@@ -145,13 +138,12 @@ open http://127.0.0.1:3000
 ## 🏗 项目结构
 
 ```
-server.js            # 零依赖 Node 后端：静态服务 + 流式 SSE 代理
-server/prompts.js    # 提示词独立模块（「目的下钻」角色 + 硬约束）
+server.js            # 零依赖 Node 后端：静态服务 + DeepSeek 代理（含自动重试）
 config.json          # API 配置（已 gitignore，不入库）
 public/
   index.html         # 页面结构（左侧工作空间 + 右侧主推导区）
   style.css          # 双主题（深/浅）Codex 式样式
-  app.js             # 前端逻辑（流式客户端 / 会话管理 / 渲染 / 导出 / 持久化）
+  app.js             # 前端逻辑（会话管理 / 渲染 / 导出 / 持久化 / 主题）
   tree.js            # SVG 图谱（灰阶调色板跟随主题，自动布局 + 缩放平移）
   md.js              # 轻量 Markdown 渲染器
 docs/screenshots/    # 界面截图
@@ -159,13 +151,14 @@ docs/screenshots/    # 界面截图
 
 ## 🛠 技术栈
 
-- **后端**：Node.js 原生 `http`（零依赖）+ 原生 `fetch` 流式转发（SSE）
+- **后端**：Node.js 原生 `http`（零依赖）
 - **前端**：原生 HTML/CSS/JS（无框架、无构建步骤）
 - **模型**：DeepSeek（OpenAI 兼容接口），支持任意兼容模型切换
 - **存储**：浏览器 localStorage（无需数据库）
 
 ## 🗺 路线图
 
+- [ ] 流式推导（思考流实时显示）
 - [ ] 推导流断点续传 / 中途取消
 - [ ] 会话重命名与标签
 - [ ] 并行对比推导（同一节点多角度下钻）
