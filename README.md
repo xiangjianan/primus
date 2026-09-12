@@ -1,123 +1,125 @@
+**English** | [简体中文](README.zh-CN.md)
+
 <div align="center">
 
-# ⚛️ 第一性原理引擎 · First Principles Engine
+# ⚛️ First Principles Engine
 
-**把目标一路「下钻」到马上能做的事**
+**Drill any goal all the way down to what you can do right now**
 
-输入一个目标（或一段散乱的长文本）→ 提炼核心目标 → 逐层推导**前置目的**：
-要做到 A，必须先做到 B；要做到 B，必须先做到 C —— 直到落到「现在就能做」的事。
-全程大白话，不钻抽象理论。
+Enter a goal (or a long, rambling chunk of text) → distill the core goal → derive the **prerequisite purpose** layer by layer:
+to achieve A, you must first achieve B; to achieve B, you must first achieve C — until you land on things you "can do right now."
+Plain language throughout; no abstract theory.
 
-[功能特性](#-功能特性) · [快速开始](#-快速开始) · [使用流程](#-使用流程) · [API](#-api) · [项目结构](#-项目结构) · [路线图](#-路线图)
+[Features](#-features) · [Quick Start](#-quick-start) · [Usage Flow](#-usage-flow) · [API](#-api) · [Project Structure](#-project-structure) · [Roadmap](#-roadmap)
 
 </div>
 
 ---
 
-## ✨ 功能特性
+## ✨ Features
 
-### 核心概念：目的前置链
+### Core concept: the prerequisite-purpose chain
 
-- 每一层是**「可执行的、更前置的目的」**——不是并列的执行步骤，不是抽象哲学原理
-- 方向：具体目标 → 越来越根本的前置条件 → **「现在就能做」的事**
-- 语言风格：大白话、一句话、可执行（模型硬约束，禁止专业术语/公式/掉书袋）
+- Each layer is an **"executable, more fundamental purpose"** — not parallel execution steps, not abstract philosophical principles
+- Direction: concrete goal → increasingly fundamental prerequisites → **things you "can do right now"**
+- Language style: plain words, one sentence, actionable (hard model constraint: no jargon / formulas / pedantry)
 
-### 界面与交互
+### UI & Interaction
 
-| 能力 | 说明 |
+| Capability | Description |
 | --- | --- |
-| 🎯 **输入与提取** | 两种模式：目标拆解（输入目的） / 随心所想（粘贴散乱长文本，先提炼核心意图再下钻） |
-| 🔁 **逐层下钻** | 每个节点可继续推导，推导结合**【整条目的链 + 全部历史补充 + 本次补充想法】**；硬约束：更前置、不重复、不绕圈 |
-| 💬 **补充输入框常驻** | 每个节点下方常驻输入框：填写你的约束/背景/偏好，模型结合它生成更贴合的一层；留空直接推导 |
-| 🛡 **防重复点击** | 推导进行中按钮自动禁用 + 逻辑层双重防护，避免重复生成节点 |
-| ✅ **可执行标记** | `isActionable` 节点显示蓝色高亮边框 +「⚡ 现在就能做」徽章 |
-| 🗂 **会话管理** | 左侧工作空间：「当前会话」卡片 + 「历史记录」列表（点击切换、hover 删除）；「收起本轮」折叠当前链 |
-| 📋 **总结（markdown）** | 整链大白话总结：总体概括 + 共同主题 + 行动建议，markdown 渲染 |
-| 🔄 **重新推导本层** | 对链的最后一层用相同参数（含原补充）重新生成 |
-| 🌌 **原理图谱** | 树形可视化，灰阶层级、跟随主题、可缩放平移，点击节点定位卡片 |
-| 🌗 **双主题** | 深色/浅色（黑白灰 + 蓝色强调），跟随系统偏好、可手动切换、持久化 |
-| 💾 **持久化** | 会话数据存 localStorage，刷新不丢；支持导出 Markdown |
-| 📱 **PWA** | 可安装到桌面/主屏幕、离线可用（Service Worker 缓存 App Shell）、移动端键盘弹出不缩放页面 |
+| 🎯 **Input & extraction** | Two modes: goal breakdown (enter a purpose) / freeform thoughts (paste rambling long text; the core intent is distilled first, then drilled down) |
+| 🔁 **Layer-by-layer drill-down** | Any node can be derived further; each derivation combines **[the entire purpose chain + all past hints + the current hint]**; hard constraints: more fundamental, no repetition, no going in circles |
+| 💬 **Always-visible hint box** | Each node has a persistent input box beneath it: enter your constraints/background/preferences and the model factors them into a better-fitting next layer; leave empty to derive directly |
+| 🛡 **Double-click protection** | Buttons auto-disable while deriving, plus a second guard in the logic layer, preventing duplicate nodes |
+| ✅ **Actionable marker** | `isActionable` nodes get a blue highlight border + an "⚡ Doable right now" badge |
+| 🗂 **Session management** | Left workspace: a "current session" card + a "history" list (click to switch, hover to delete); "Collapse round" folds the current chain |
+| 📋 **Summary (markdown)** | A plain-language summary of the whole chain: overall overview + common themes + action suggestions, rendered as markdown |
+| 🔄 **Re-derive this layer** | Regenerate the chain's last layer with the same parameters (including the original hints) |
+| 🌌 **Principle graph** | Tree visualization with a grayscale hierarchy that follows the theme; zoomable and pannable; click a node to jump to its card |
+| 🌗 **Dual themes** | Dark/light (black-white-gray with a blue accent), follows system preference, manually switchable, persisted |
+| 💾 **Persistence** | Session data lives in localStorage and survives refresh; export to Markdown supported |
+| 📱 **PWA** | Installable to desktop/home screen, works offline (Service Worker caches the App Shell), and the mobile keyboard popping up doesn't shrink the page |
 
-### 界面预览
+### UI Preview
 
-| 深色主题 | 浅色主题 |
+| Dark theme | Light theme |
 | :---: | :---: |
-| ![深色主题](docs/screenshots/dark.png) | ![浅色主题](docs/screenshots/light.png) |
+| ![Dark theme](docs/screenshots/dark.png) | ![Light theme](docs/screenshots/light.png) |
 
-## 🚀 快速开始
+## 🚀 Quick Start
 
-要求：**Node.js ≥ 18**（自带 `fetch`），零第三方依赖，无需 `npm install`。
+Requirements: **Node.js ≥ 18** (built-in `fetch`), zero third-party dependencies, no `npm install` needed.
 
 ```bash
-# 1. 配置 API Key（两种方式任选，环境变量优先）
-#    方式 A：环境变量
+# 1. Configure the API key (either way; environment variables take priority)
+#    Option A: environment variables
 export DEEPSEEK_API_KEY=sk-xxxxxxxx
 export DEEPSEEK_MODEL=deepseek-v4-flash
 
-#    方式 B：编辑 config.json（已被 .gitignore 忽略，不会提交）
+#    Option B: edit config.json (gitignored, never committed)
 #    { "apiKey": "sk-xxxxxxxx", "model": "deepseek-v4-flash" }
 
-# 2. 启动
+# 2. Start
 node server.js
 
-# 3. 打开浏览器
+# 3. Open your browser
 open http://127.0.0.1:3000
 ```
 
-## 🧭 使用流程
+## 🧭 Usage Flow
 
 ```
-初始态：主区输入「一个目标，或随便说说你的想法」
+Initial state: in the main area, type "a goal, or just ramble about what's on your mind"
   ↓
-输入目标/长文本 → 提炼核心意图 + 第 1 层前置目的
-  主区变成：目标卡片 + 节点链
+Enter a goal / long text → the core intent + layer-1 prerequisite purposes are distilled
+  The main area becomes: a goal card + a node chain
   ↓
-点「继续往下钻」，可选填写「补充想法」
-  → 下一层 = 模型结合【整条链 + 全部历史补充 + 本次补充】推导
+Click "Drill deeper"; optionally fill in "extra thoughts"
+  → the next layer = the model derives it from [the whole chain + all past hints + this hint]
   ↓
-…循环，直到不再继续
+… loop until you stop
   ↓
-点「生成总结」→ 整链大白话总结（含马上能做的第一件事）
+Click "Generate summary" → a plain-language summary of the whole chain (including the first thing you can do right now)
   ↓
-点「收起本轮」→ 折叠当前链；左侧历史记录可随时切回
+Click "Collapse round" → folds the current chain; the left-side history lets you switch back anytime
 ```
 
-## ☁️ 部署到 Cloudflare Pages
+## ☁️ Deploy to Cloudflare Pages
 
-项目已适配 [Cloudflare Pages Functions](https://developers.cloudflare.com/pages/functions/)：
-- **静态资源**：`public/`（Pages 平台自动托管）
-- **API（`/api/*`）**：`functions/` 目录编译为 Pages Functions（Workers 运行时，无需 Node 服务器）
-- **配置**：模型名/接口地址在 `wrangler.toml` 的 `[vars]`；API 密钥存为 Cloudflare Secret
+The project is adapted for [Cloudflare Pages Functions](https://developers.cloudflare.com/pages/functions/):
+- **Static assets**: `public/` (hosted automatically by the Pages platform)
+- **API (`/api/*`)**: the `functions/` directory compiles into Pages Functions (Workers runtime, no Node server needed)
+- **Configuration**: model name / base URL in the `[vars]` of `wrangler.toml`; the API key is stored as a Cloudflare Secret
 
 ```bash
-# 1. 登录 Cloudflare
+# 1. Log in to Cloudflare
 wrangler login
 
-# 2. 创建项目（首次）
+# 2. Create the project (first time only)
 wrangler pages project create first-principles-engine --production-branch main
 
-# 3. 配置 API 密钥（Secret，不会进入代码仓库）
+# 3. Configure the API key (as a Secret, it never enters the code repository)
 echo "sk-xxxxxxxx" | wrangler pages secret put DEEPSEEK_API_KEY --project-name first-principles-engine
 
-# 4. 部署（若命令卡住，先禁用遥测：WRANGLER_SEND_METRICS=false）
+# 4. Deploy (if the command hangs, disable telemetry first: WRANGLER_SEND_METRICS=false)
 wrangler pages deploy --project-name first-principles-engine --branch main
 
-# 5. 注意：修改 Secret/环境变量后需重新部署一次才会生效
+# 5. Note: after changing Secrets/env vars, redeploy once for the change to take effect
 ```
 
-> 线上演示：https://first-principles-engine-1li.pages.dev
+> Live demo: https://first-principles-engine-1li.pages.dev
 
-### 移动端与 PWA
+### Mobile & PWA
 
-- **防键盘缩放**：`viewport` 设置 `maximum-scale=1, user-scalable=no, interactive-widget=resizes-content` + `touch-action: manipulation` + 输入框字号 ≥16px（iOS 聚焦不自动放大）
-- **移动端适配**：侧栏抽屉化、触控目标 ≥44px、安全区（刘海屏）、操作条吸底横向滚动、窄屏紧凑布局
-- **PWA**：`manifest.webmanifest`（standalone + 自适应图标）+ `sw.js`（App Shell 预缓存 + 离线可用，`/api/*` 网络优先不缓存）
-- 手机浏览器打开线上地址 → 菜单「添加到主屏幕」即可安装
+- **No keyboard zoom**: `viewport` set to `maximum-scale=1, user-scalable=no, interactive-widget=resizes-content` + `touch-action: manipulation` + input font size ≥16px (no auto-zoom on iOS focus)
+- **Mobile adaptation**: drawer-style sidebar, touch targets ≥44px, safe-area support (notch), bottom-stuck action bar with horizontal scrolling, compact narrow-screen layout
+- **PWA**: `manifest.webmanifest` (standalone + adaptive icons) + `sw.js` (App Shell precache + offline support; `/api/*` is network-first and not cached)
+- Open the live URL in a mobile browser → menu "Add to Home Screen" to install
 
-## ⚙️ 配置
+## ⚙️ Configuration
 
-`config.json`（可留空，全部走环境变量）：
+`config.json` (can be left empty; everything can go through environment variables):
 
 ```json
 {
@@ -128,18 +130,18 @@ wrangler pages deploy --project-name first-principles-engine --branch main
 }
 ```
 
-| 环境变量 | 默认值 | 说明 |
+| Env var | Default | Description |
 | --- | --- | --- |
-| `DEEPSEEK_API_KEY` | 必填 | API 密钥（仅存在于服务端） |
-| `DEEPSEEK_MODEL` | `deepseek-v4-flash` | 模型名 |
-| `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | 接口地址（OpenAI 兼容） |
-| `PORT` | `3000` | 服务端口 |
+| `DEEPSEEK_API_KEY` | required | API key (server-side only) |
+| `DEEPSEEK_MODEL` | `deepseek-v4-flash` | Model name |
+| `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | API base URL (OpenAI-compatible) |
+| `PORT` | `3000` | Server port |
 
 ## 📡 API
 
-### `POST /api/derive` — 目的下钻
+### `POST /api/derive` — purpose drill-down
 
-请求：
+Request:
 
 ```json
 {
@@ -150,60 +152,60 @@ wrangler pages deploy --project-name first-principles-engine --branch main
 }
 ```
 
-- `mode`：`goal`（目标拆解） / `text`（随心所想，返回 essence） / `derive`（继续下钻）
-- `hint`：用户补充想法（推导时结合）
-- `context`：已走过的目的链（继续下钻时携带，避免重复绕圈）
-- 响应：`{ data: { label, principle, essence?, reasoning, keywords, isActionable }, thinking }`
-- 容错：`response_format: json_object` + 提取首个 JSON 对象兜底 + 解析失败自动重试一次（放宽 token）
+- `mode`: `goal` (goal breakdown) / `text` (freeform thoughts, returns essence) / `derive` (continue drilling down)
+- `hint`: user-supplied extra thoughts (factored into the derivation)
+- `context`: the purpose chain traversed so far (sent when continuing, to avoid repetition and circles)
+- Response: `{ data: { label, principle, essence?, reasoning, keywords, isActionable }, thinking }`
+- Resilience: `response_format: json_object` + a first-JSON-object extraction fallback + one automatic retry on parse failure (with a relaxed token limit)
 
-### `POST /api/summarize` — 整链总结
+### `POST /api/summarize` — whole-chain summary
 
 ```json
 { "nodes": [{ "label": "...", "principle": "...", "essence": "...", "depth": 0 }] }
 ```
 
-→ `{ "data": { "summary": "markdown 总结", "themes": [], "actions": [] } }`
+→ `{ "data": { "summary": "markdown summary", "themes": [], "actions": [] } }`
 
-### `GET /api/health` — 健康检查
+### `GET /api/health` — health check
 
 → `{ "ok": true, "model": "deepseek-v4-flash", "apiKeySet": true }`
 
-## 🏗 项目结构
+## 🏗 Project Structure
 
 ```
-server.js            # 零依赖 Node 后端：静态服务 + DeepSeek 代理（含自动重试，本地运行用）
-functions/           # Cloudflare Pages Functions（线上部署用，Workers 运行时）
-  api/_shared.js     #   共享逻辑：提示词 + DeepSeek 调用 + 解析容错
+server.js            # Zero-dependency Node backend: static serving + DeepSeek proxy (with auto retry; used for local runs)
+functions/           # Cloudflare Pages Functions (for online deployment, Workers runtime)
+  api/_shared.js     #   Shared logic: prompts + DeepSeek calls + parsing fallbacks
   api/derive.js      #   POST /api/derive
   api/summarize.js   #   POST /api/summarize
   api/health.js      #   GET  /api/health
-wrangler.toml        # Cloudflare Pages 部署配置（[vars] 模型名/接口地址）
-config.json          # 本地 API 配置（已 gitignore，不入库）
+wrangler.toml        # Cloudflare Pages deployment config ([vars]: model name / base URL)
+config.json          # Local API config (gitignored, not committed)
 public/
-  index.html         # 页面结构（左侧工作空间 + 右侧主推导区）
-  style.css          # 双主题（深/浅）Codex 式样式
-  app.js             # 前端逻辑（会话管理 / 渲染 / 导出 / 持久化 / 主题）
-  tree.js            # SVG 图谱（灰阶调色板跟随主题，自动布局 + 缩放平移）
-  md.js              # 轻量 Markdown 渲染器
-docs/screenshots/    # 界面截图
+  index.html         # Page structure (left workspace + main derivation area on the right)
+  style.css          # Dual-theme (dark/light) Codex-style styling
+  app.js             # Frontend logic (session management / rendering / export / persistence / theme)
+  tree.js            # SVG graph (grayscale palette follows the theme, auto layout + zoom/pan)
+  md.js              # Lightweight Markdown renderer
+docs/screenshots/    # UI screenshots
 ```
 
-> 本地与线上双入口：`node server.js`（本地开发）与 `functions/`（Cloudflare Pages）实现同一套 API，前端无需改动。
+> Dual entry points, local and online: `node server.js` (local development) and `functions/` (Cloudflare Pages) implement the same API, so the frontend needs no changes.
 
-## 🛠 技术栈
+## 🛠 Tech Stack
 
-- **后端**：Node.js 原生 `http`（零依赖）
-- **前端**：原生 HTML/CSS/JS（无框架、无构建步骤）
-- **模型**：DeepSeek（OpenAI 兼容接口），支持任意兼容模型切换
-- **存储**：浏览器 localStorage（无需数据库）
+- **Backend**: Node.js native `http` (zero dependencies)
+- **Frontend**: vanilla HTML/CSS/JS (no framework, no build step)
+- **Model**: DeepSeek (OpenAI-compatible API), any compatible model can be swapped in
+- **Storage**: browser localStorage (no database needed)
 
-## 🗺 路线图
+## 🗺 Roadmap
 
-- [ ] 流式推导（思考流实时显示）
-- [ ] 推导流断点续传 / 中途取消
-- [ ] 会话重命名与标签
-- [ ] 并行对比推导（同一节点多角度下钻）
-- [ ] 一键部署脚本（Docker / 云函数）
+- [ ] Streaming derivation (thinking stream shown in real time)
+- [ ] Resumable derivation streams / mid-stream cancellation
+- [ ] Session renaming and tags
+- [ ] Parallel comparison derivations (drill the same node from multiple angles)
+- [ ] One-click deployment scripts (Docker / cloud functions)
 
 ## 📄 License
 
